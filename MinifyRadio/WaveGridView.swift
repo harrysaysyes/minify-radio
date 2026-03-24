@@ -57,9 +57,16 @@ final class WavePhysics: ObservableObject {
     private var pvy:      Double = 0
     private var pActive          = false
 
+    private var rowBuf:      [CGPoint] = []
+    private var smoothedBuf: [CGPoint] = []
+
     /// Set externally (e.g. by RadioEngine energy callback). Not @Published —
     /// avoids triggering 30 SwiftUI redraws/sec. Read directly in draw().
     var audioEnergy: Double = 0
+
+    // Third smoothing stage: amplitude itself glides rather than snaps,
+    // preventing visible size jumps between frames.
+    private var smoothedAmpY: Double = WaveCfg.waveAmpY
 
     // MARK: Grid init
 
@@ -82,7 +89,9 @@ final class WavePhysics: ObservableObject {
                 ))
             }
         }
-        points = pts
+        points      = pts
+        rowBuf      = [CGPoint](repeating: .zero, count: c)
+        smoothedBuf = [CGPoint](repeating: .zero, count: c)
     }
 
     // MARK: Physics update
@@ -166,6 +175,8 @@ final class WavePhysics: ObservableObject {
         // Audio-reactive amplitude (matches wave-grid.js power-curve approach)
         let audioResponse  = pow(max(0, audioEnergy), 1.5)
         let effAmpY        = WaveCfg.waveAmpY * (1.0 + audioResponse * WaveCfg.audioAmpMultiplier)
+        // Glide the amplitude — prevents visible size jumps when energy spikes
+        smoothedAmpY      += (effAmpY - smoothedAmpY) * 0.12
 
         ctx.withCGContext { cg in
             cg.setStrokeColor(UIColor(lineColor).cgColor)
@@ -174,28 +185,40 @@ final class WavePhysics: ObservableObject {
             cg.setLineCap(.round)
 
             for row in 0..<rows {
-                cg.beginPath()
-                var moved = false
-
                 for col in 0..<cols {
                     let i = row * cols + col
                     guard i < points.count else { break }
                     let p = points[i]
-
-                    let n     = SimplexNoise.noise2D(
+                    let noise = SimplexNoise.noise2D(
                         p.baseX * WaveCfg.xScale + time * WaveCfg.speedX,
                         p.baseY * WaveCfg.yScale + time * WaveCfg.speedY
                     )
-                    let angle = WaveCfg.angleGain * n
-                    let wy    = sin(angle) * effAmpY
-
-                    let fx = p.baseX + p.cx * WaveCfg.cursorXScale
-                    let fy = p.baseY + wy + p.cy
-
-                    let pt = CGPoint(x: fx, y: fy)
-                    if !moved { cg.move(to: pt); moved = true }
-                    else      { cg.addLine(to: pt) }
+                    let wy = sin(WaveCfg.angleGain * noise) * smoothedAmpY
+                    rowBuf[col] = CGPoint(x: p.baseX + p.cx * WaveCfg.cursorXScale, y: p.baseY + wy + p.cy)
                 }
+
+                let nc = cols
+                smoothedBuf[0] = rowBuf[0]
+                if nc > 1 { smoothedBuf[nc - 1] = rowBuf[nc - 1] }
+                for k in 1..<(nc - 1) {
+                    smoothedBuf[k] = CGPoint(
+                        x: (rowBuf[k - 1].x + 2.0 * rowBuf[k].x + rowBuf[k + 1].x) / 4.0,
+                        y: (rowBuf[k - 1].y + 2.0 * rowBuf[k].y + rowBuf[k + 1].y) / 4.0
+                    )
+                }
+
+                guard nc > 0 else { continue }
+                cg.beginPath()
+                cg.move(to: smoothedBuf[0])
+                if nc > 2 {
+                    for i in 1..<(nc - 1) {
+                        let ctrl = smoothedBuf[i]
+                        let mid  = CGPoint(x: (smoothedBuf[i].x + smoothedBuf[i+1].x) / 2,
+                                          y: (smoothedBuf[i].y + smoothedBuf[i+1].y) / 2)
+                        cg.addQuadCurve(to: mid, control: ctrl)
+                    }
+                }
+                cg.addLine(to: smoothedBuf[nc - 1])
                 cg.strokePath()
             }
         }
