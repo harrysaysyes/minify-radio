@@ -59,14 +59,14 @@ final class WavePhysics: ObservableObject {
 
     private var rowBuf:      [CGPoint] = []
     private var smoothedBuf: [CGPoint] = []
+    private var allSmoothed: [CGPoint] = []
 
-    /// Set externally (e.g. by RadioEngine energy callback). Not @Published —
-    /// avoids triggering 30 SwiftUI redraws/sec. Read directly in draw().
-    var audioEnergy: Double = 0
+    /// Set externally by RadioEngine. Not @Published — avoids SwiftUI redraws.
+    var bassEnergy:   Double = 0
+    var trebleEnergy: Double = 0
 
-    // Third smoothing stage: amplitude itself glides rather than snaps,
-    // preventing visible size jumps between frames.
-    private var smoothedAmpY: Double = WaveCfg.waveAmpY
+    private var smoothedAmpY:    Double = WaveCfg.waveAmpY
+    private var smoothedXStretch: Double = 0
 
     // MARK: Grid init
 
@@ -74,8 +74,10 @@ final class WavePhysics: ObservableObject {
         guard size.width > 0, size.height > 0, size != initializedSize else { return }
         initializedSize = size
 
-        let c = Int(ceil(size.width  / WaveCfg.xGap)) + 1
-        let r = Int(ceil(size.height / WaveCfg.yGap)) + 1
+        let padX = 4  // extra columns each side
+        let padY = 3  // extra rows each side
+        let c = Int(ceil(size.width  / WaveCfg.xGap)) + 1 + padX * 2
+        let r = Int(ceil(size.height / WaveCfg.yGap)) + 1 + padY * 2
         cols = c
         rows = r
 
@@ -84,14 +86,15 @@ final class WavePhysics: ObservableObject {
         for row in 0..<r {
             for col in 0..<c {
                 pts.append(GridPoint(
-                    baseX: Double(col) * WaveCfg.xGap,
-                    baseY: Double(row) * WaveCfg.yGap
+                    baseX: Double(col - padX) * WaveCfg.xGap,
+                    baseY: Double(row - padY) * WaveCfg.yGap
                 ))
             }
         }
         points      = pts
         rowBuf      = [CGPoint](repeating: .zero, count: c)
         smoothedBuf = [CGPoint](repeating: .zero, count: c)
+        allSmoothed = [CGPoint](repeating: .zero, count: r * c)
     }
 
     // MARK: Physics update
@@ -172,55 +175,94 @@ final class WavePhysics: ObservableObject {
         ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(bgColor))
         guard !points.isEmpty else { return }
 
-        // Audio-reactive amplitude (matches wave-grid.js power-curve approach)
-        let audioResponse  = pow(max(0, audioEnergy), 1.5)
-        let effAmpY        = WaveCfg.waveAmpY * (1.0 + audioResponse * WaveCfg.audioAmpMultiplier)
-        // Glide the amplitude — prevents visible size jumps when energy spikes
-        smoothedAmpY      += (effAmpY - smoothedAmpY) * 0.12
+        // Bass → wave height
+        let bassResponse = pow(max(0, bassEnergy), 1.5)
+        let effAmpY      = WaveCfg.waveAmpY * (1.0 + bassResponse * WaveCfg.audioAmpMultiplier)
+        smoothedAmpY    += (effAmpY - smoothedAmpY) * 0.12
 
+        // Treble → subtle compression toward screen centre
+        let trebleResponse = pow(max(0, trebleEnergy), 1.2)
+        smoothedXStretch  += (trebleResponse * 0.06 - smoothedXStretch) * 0.15
+        let screenCentreX  = size.width / 2
+
+        let nc = cols
+        guard nc > 0 else { return }
+
+        // Phase 1: compute all row positions into allSmoothed
+        for row in 0..<rows {
+            for col in 0..<cols {
+                let i = row * cols + col
+                guard i < points.count else { break }
+                let p = points[i]
+                let noise = SimplexNoise.noise2D(
+                    p.baseX * WaveCfg.xScale + time * WaveCfg.speedX,
+                    p.baseY * WaveCfg.yScale + time * WaveCfg.speedY
+                )
+                let wy  = sin(WaveCfg.angleGain * noise) * smoothedAmpY
+                let fx  = p.baseX + p.cx * WaveCfg.cursorXScale
+                let fxS = screenCentreX + (fx - screenCentreX) * (1.0 - smoothedXStretch)
+                rowBuf[col] = CGPoint(x: fxS, y: p.baseY + wy + p.cy)
+            }
+            // Bézier smoothing pass
+            let base = row * nc
+            smoothedBuf[0] = rowBuf[0]
+            if nc > 1 { smoothedBuf[nc - 1] = rowBuf[nc - 1] }
+            for k in 1..<(nc - 1) {
+                smoothedBuf[k] = CGPoint(
+                    x: (rowBuf[k - 1].x + 2.0 * rowBuf[k].x + rowBuf[k + 1].x) / 4.0,
+                    y: (rowBuf[k - 1].y + 2.0 * rowBuf[k].y + rowBuf[k + 1].y) / 4.0
+                )
+            }
+            for k in 0..<nc { allSmoothed[base + k] = smoothedBuf[k] }
+        }
+
+        // Phase 2: enforce row ordering — no row may cross its neighbour
+        let gap = 0.5
+        // Top-down: each row's y must be >= previous row's y
+        for row in 1..<rows {
+            let prev = (row - 1) * nc
+            let curr = row * nc
+            for k in 0..<nc {
+                allSmoothed[curr + k].y = max(allSmoothed[curr + k].y, allSmoothed[prev + k].y + gap)
+            }
+        }
+        // Bottom-up: each row's y must be <= next row's y
+        for row in stride(from: rows - 2, through: 0, by: -1) {
+            let next = (row + 1) * nc
+            let curr = row * nc
+            for k in 0..<nc {
+                allSmoothed[curr + k].y = min(allSmoothed[curr + k].y, allSmoothed[next + k].y - gap)
+            }
+        }
+
+        // Phase 3: draw — transparency layer prevents alpha accumulation where lines converge
         ctx.withCGContext { cg in
-            cg.setStrokeColor(UIColor(lineColor).cgColor)
+            let uiColor = UIColor(lineColor)
+            var r: CGFloat = 1, g: CGFloat = 1, b: CGFloat = 1, a: CGFloat = 1
+            uiColor.getRed(&r, green: &g, blue: &b, alpha: &a)
+            cg.setAlpha(a)
+            cg.beginTransparencyLayer(auxiliaryInfo: nil)
+            cg.setStrokeColor(CGColor(red: r, green: g, blue: b, alpha: 1))
             cg.setLineWidth(1)
             cg.setLineJoin(.round)
             cg.setLineCap(.round)
 
             for row in 0..<rows {
-                for col in 0..<cols {
-                    let i = row * cols + col
-                    guard i < points.count else { break }
-                    let p = points[i]
-                    let noise = SimplexNoise.noise2D(
-                        p.baseX * WaveCfg.xScale + time * WaveCfg.speedX,
-                        p.baseY * WaveCfg.yScale + time * WaveCfg.speedY
-                    )
-                    let wy = sin(WaveCfg.angleGain * noise) * smoothedAmpY
-                    rowBuf[col] = CGPoint(x: p.baseX + p.cx * WaveCfg.cursorXScale, y: p.baseY + wy + p.cy)
-                }
-
-                let nc = cols
-                smoothedBuf[0] = rowBuf[0]
-                if nc > 1 { smoothedBuf[nc - 1] = rowBuf[nc - 1] }
-                for k in 1..<(nc - 1) {
-                    smoothedBuf[k] = CGPoint(
-                        x: (rowBuf[k - 1].x + 2.0 * rowBuf[k].x + rowBuf[k + 1].x) / 4.0,
-                        y: (rowBuf[k - 1].y + 2.0 * rowBuf[k].y + rowBuf[k + 1].y) / 4.0
-                    )
-                }
-
-                guard nc > 0 else { continue }
+                let base = row * nc
                 cg.beginPath()
-                cg.move(to: smoothedBuf[0])
+                cg.move(to: allSmoothed[base])
                 if nc > 2 {
                     for i in 1..<(nc - 1) {
-                        let ctrl = smoothedBuf[i]
-                        let mid  = CGPoint(x: (smoothedBuf[i].x + smoothedBuf[i+1].x) / 2,
-                                          y: (smoothedBuf[i].y + smoothedBuf[i+1].y) / 2)
+                        let ctrl = allSmoothed[base + i]
+                        let mid  = CGPoint(x: (allSmoothed[base + i].x + allSmoothed[base + i + 1].x) / 2,
+                                          y: (allSmoothed[base + i].y + allSmoothed[base + i + 1].y) / 2)
                         cg.addQuadCurve(to: mid, control: ctrl)
                     }
                 }
-                cg.addLine(to: smoothedBuf[nc - 1])
+                cg.addLine(to: allSmoothed[base + nc - 1])
                 cg.strokePath()
             }
+            cg.endTransparencyLayer()
         }
     }
 

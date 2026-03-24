@@ -146,7 +146,7 @@ class RadioEngine: NSObject, ObservableObject {
     @Published private(set) var nowPlayingTitle  = "Select a station"
     @Published private(set) var nowPlayingArtist = ""
 
-    var onEnergyUpdate: ((Double) -> Void)?
+    var onEnergyUpdate: ((_ bass: Double, _ treble: Double) -> Void)?
 
     // MARK: - Streaming engine
 
@@ -172,8 +172,26 @@ class RadioEngine: NSObject, ObservableObject {
 
     private var energyTimer:    Timer?
     private var energyPhase:    Double = 0
-    private var energySmoothed: Double = 0
-    private var tapRMS: Double = 0
+    private var bassSmoothed:   Double = 0
+    private var trebleSmoothed: Double = 0
+    private var tapBass:        Double = 0
+    private var tapTreble:      Double = 0
+
+    // Ring buffer: delays energy to align with AVPlayer's playback buffer (~2 s)
+    private let delayFrames = 120
+    private var bassRing:   [Double] = []
+    private var trebleRing: [Double] = []
+    private var ringHead:   Int = 0
+
+    // FFT state — allocated once, reused each decode callback
+    private var fftSetup:      FFTSetup?
+    private var fftLog2n:      vDSP_Length = 0
+    private var fftN:          Int = 0
+    private var fftRealBuf:    [Float] = []
+    private var fftImagBuf:    [Float] = []
+    private var fftMagBuf:     [Float] = []
+    private var fftWindow:     [Float] = []
+    private var fftSampleRate: Double  = 0
 
     // MARK: - Init
 
@@ -216,7 +234,7 @@ class RadioEngine: NSObject, ObservableObject {
         currentStation   = nil
         nowPlayingTitle  = "Select a station"
         nowPlayingArtist = ""
-        onEnergyUpdate?(0)
+        onEnergyUpdate?(0, 0)
         updateNowPlaying()
     }
 
@@ -343,17 +361,76 @@ class RadioEngine: NSObject, ObservableObject {
                                                        &ioFrames, buffer.mutableAudioBufferList, nil)
         if (status == noErr || status == -1) && ioFrames > 0 {
             buffer.frameLength = ioFrames
-            // Measure energy directly from decoded PCM — no engine needed, buffer discarded
+            // FFT band energy from decoded PCM
             guard let chData = buffer.floatChannelData else { return }
-            let frames  = Int(buffer.frameLength)
-            let chCount = Int(buffer.format.channelCount)
-            var sum: Float = 0
+            let frames     = Int(buffer.frameLength)
+            let sampleRate = buffer.format.sampleRate
+            let chCount    = Int(buffer.format.channelCount)
+
+            // Mix to mono
+            var mono = [Float](repeating: 0, count: frames)
             for ch in 0..<chCount {
-                let d = chData[ch]
-                for i in 0..<frames { sum += d[i] * d[i] }
+                let src = chData[ch]
+                for i in 0..<frames { mono[i] += src[i] }
             }
-            let rms = sqrt(sum / Float(max(1, frames * chCount)))
-            tapRMS = tanh(Double(rms) * 5.0)
+            if chCount > 1 {
+                let s = Float(1.0 / Double(chCount))
+                vDSP_vsmul(mono, 1, [s], &mono, 1, vDSP_Length(frames))
+            }
+
+            // Lazy FFT setup — reallocate only when size/rate changes
+            let log2n: vDSP_Length = 11   // 2048-point
+            let n = 1 << log2n
+            if fftSetup == nil || fftLog2n != log2n || fftSampleRate != sampleRate {
+                if let old = fftSetup { vDSP_destroy_fftsetup(old) }
+                fftSetup      = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2))
+                fftLog2n      = log2n
+                fftN          = n
+                fftSampleRate = sampleRate
+                fftRealBuf    = [Float](repeating: 0, count: n / 2)
+                fftImagBuf    = [Float](repeating: 0, count: n / 2)
+                fftMagBuf     = [Float](repeating: 0, count: n / 2)
+                fftWindow     = [Float](repeating: 0, count: n)
+                vDSP_hann_window(&fftWindow, vDSP_Length(n), Int32(vDSP_HANN_NORM))
+            }
+            guard let setup = fftSetup else { return }
+
+            // Window + zero-pad
+            var windowed = [Float](repeating: 0, count: fftN)
+            vDSP_vmul(mono, 1, fftWindow, 1, &windowed, 1, vDSP_Length(min(frames, fftN)))
+
+            // Forward real FFT using stable pointer approach
+            fftRealBuf.withUnsafeMutableBufferPointer { rp in
+                fftImagBuf.withUnsafeMutableBufferPointer { ip in
+                    var split = DSPSplitComplex(realp: rp.baseAddress!, imagp: ip.baseAddress!)
+                    windowed.withUnsafeMutableBufferPointer { wp in
+                        wp.baseAddress!.withMemoryRebound(to: DSPComplex.self, capacity: fftN / 2) { cp in
+                            vDSP_ctoz(cp, 2, &split, 1, vDSP_Length(fftN / 2))
+                        }
+                    }
+                    vDSP_fft_zrip(setup, &split, 1, fftLog2n, FFTDirection(FFT_FORWARD))
+                    fftMagBuf.withUnsafeMutableBufferPointer { mp in
+                        vDSP_zvmags(&split, 1, mp.baseAddress!, 1, vDSP_Length(fftN / 2))
+                    }
+                }
+            }
+
+            // Sum bands — normalize by fftN/2 so values are independent of transform size
+            let binHz    = sampleRate / Double(fftN)
+            let bassLo   = max(1, Int(20   / binHz))
+            let bassHi   = Int(250  / binHz)
+            let trebLo   = Int(3000 / binHz)
+            let trebHi   = min(Int(16000 / binHz), fftN / 2 - 1)
+            let norm     = 1.0 / Float(fftN / 2)
+
+            var bSum: Float = 0, tSum: Float = 0
+            for b in bassLo...bassHi { bSum += fftMagBuf[b] }
+            for b in trebLo...trebHi { tSum += fftMagBuf[b] }
+
+            let bCount = Float(max(1, bassHi - bassLo + 1))
+            let tCount = Float(max(1, trebHi - trebLo + 1))
+            tapBass   = tanh(Double(sqrt(bSum / bCount) * norm) * 8.0)
+            tapTreble = tanh(Double(sqrt(tSum / tCount) * norm) * 8.0)
         }
     }
 
@@ -453,36 +530,50 @@ class RadioEngine: NSObject, ObservableObject {
     private func startEnergyTimer() {
         stopEnergyTimer()
         energyPhase    = 0
-        energySmoothed = 0
-        tapRMS         = 0
+        bassSmoothed   = 0
+        trebleSmoothed = 0
+        tapBass        = 0
+        tapTreble      = 0
+        bassRing       = [Double](repeating: 0, count: delayFrames)
+        trebleRing     = [Double](repeating: 0, count: delayFrames)
+        ringHead       = 0
 
         energyTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             guard let self else { return }
             self.energyPhase += 1.0 / 60.0
-            let t    = self.energyPhase
-            let live = self.tapRMS
+            let t = self.energyPhase
 
-            if live > 0.01 {
-                // At 60 fps: attack 0.15 ≈ 100 ms TC (matches web AnalyserNode 83 ms),
-                // release 0.04 ≈ 370 ms TC for gradual tail-off.
-                let alpha = live > self.energySmoothed ? 0.15 : 0.04
-                self.energySmoothed += (live - self.energySmoothed) * alpha
+            func lerp(_ current: Double, toward live: Double) -> Double {
+                let alpha = live > current ? 0.15 : 0.04
+                return current + (live - current) * alpha
+            }
+
+            if self.tapBass > 0.01 || self.tapTreble > 0.01 {
+                self.bassSmoothed   = lerp(self.bassSmoothed,   toward: self.tapBass)
+                self.trebleSmoothed = lerp(self.trebleSmoothed, toward: self.tapTreble)
             } else {
+                // Idle drift — bass and treble phase-shifted so they move independently
                 let a = 0.5 + 0.5 * sin(t * 0.31)
                 let b = 0.5 + 0.5 * sin(t * 0.71 + 2.1)
                 let c = 0.5 + 0.5 * sin(t * 1.33 + 0.8)
-                let target = a * 0.50 + b * 0.30 + c * 0.20
-                // 0.02 lerp at 60 fps ≈ same 830 ms TC as 0.04 at 30 fps
-                self.energySmoothed += (target - self.energySmoothed) * 0.02
+                self.bassSmoothed   += ((a * 0.50 + b * 0.30 + c * 0.20) * 0.4 - self.bassSmoothed)   * 0.02
+                self.trebleSmoothed += ((b * 0.50 + c * 0.30 + a * 0.20) * 0.2 - self.trebleSmoothed) * 0.02
             }
-            self.onEnergyUpdate?(self.energySmoothed)
+
+            // Write to ring, read from delayed tail
+            self.bassRing[self.ringHead]   = self.bassSmoothed
+            self.trebleRing[self.ringHead] = self.trebleSmoothed
+            let tail = (self.ringHead + 1) % self.delayFrames
+            self.onEnergyUpdate?(self.bassRing[tail], self.trebleRing[tail])
+            self.ringHead = tail
         }
     }
 
     private func stopEnergyTimer() {
         energyTimer?.invalidate()
         energyTimer = nil
-        tapRMS      = 0
+        tapBass     = 0
+        tapTreble   = 0
     }
 
     // MARK: - Remote commands

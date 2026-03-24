@@ -126,8 +126,9 @@ struct ContentView: View {
         }
         .ignoresSafeArea()
         .onAppear {
-            engine.onEnergyUpdate = { [weak physics] energy in
-                physics?.audioEnergy = energy
+            engine.onEnergyUpdate = { [weak physics] bass, treble in
+                physics?.bassEnergy   = bass
+                physics?.trebleEnergy = treble
             }
         }
         .sheet(isPresented: $showSupport) {
