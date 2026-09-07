@@ -39,6 +39,85 @@ struct AdaptiveNormalizer {
     }
 }
 
+/// Predictive beat tracker. Onset detection is always reactive — the pulse fires
+/// after the beat was heard, so it lands late by detection + output latency.
+/// This tracker listens to onset times, estimates tempo (folding double-time
+/// into beat range) and phase-locks a beat grid to them. Once confident, beats
+/// can be *predicted* and fired slightly early to cancel known latency; erratic
+/// material never locks and stays reactive.
+struct TempoTracker {
+
+    let minPeriod:     Double
+    let maxPeriod:     Double
+    let lockThreshold: Double
+
+    private(set) var period:     Double?
+    private(set) var confidence: Double = 0
+    private(set) var nextBeat:   Double?
+    private var lastOnset: Double?
+    private var intervals: [Double] = []
+
+    init(minPeriod: Double = 0.3, maxPeriod: Double = 1.0, lockThreshold: Double = 0.6) {
+        self.minPeriod     = minPeriod
+        self.maxPeriod     = maxPeriod
+        self.lockThreshold = lockThreshold
+    }
+
+    var isLocked: Bool { confidence >= lockThreshold && period != nil }
+
+    mutating func registerOnset(at time: Double) {
+        defer { lastOnset = time }
+        guard let last = lastOnset else { return }
+
+        var interval = time - last
+        guard interval > 0.05, interval < 4.0 else { return }
+        while interval > maxPeriod { interval /= 2 }
+        while interval < minPeriod { interval *= 2 }
+
+        intervals.append(interval)
+        if intervals.count > 8 { intervals.removeFirst() }
+        guard intervals.count >= 4 else { return }
+
+        let median = intervals.sorted()[intervals.count / 2]
+        period = median
+
+        // Confidence falls with interval jitter relative to the median.
+        let meanDeviation = intervals.map { abs($0 - median) / median }
+            .reduce(0, +) / Double(intervals.count)
+        confidence = max(0, 1 - meanDeviation * 6)
+
+        // Phase-lock: nudge the predicted grid halfway toward this onset.
+        if isLocked, let predicted = nextBeat {
+            var error = (time - predicted).truncatingRemainder(dividingBy: median)
+            if error >  median / 2 { error -= median }
+            if error < -median / 2 { error += median }
+            var beat = predicted + error * 0.5
+            while beat <= time { beat += median }
+            nextBeat = beat
+        } else {
+            nextBeat = time + median
+        }
+    }
+
+    /// Consume the next predicted beat if it is due at `time` (+ `lead` seconds of
+    /// early-fire to cover output latency). Predictions stop after ~4 silent periods.
+    mutating func consumeBeat(at time: Double, lead: Double) -> Bool {
+        guard isLocked, let p = period, let beat = nextBeat,
+              let last = lastOnset, time - last < p * 4,
+              time + lead >= beat else { return false }
+        nextBeat = beat + p
+        return true
+    }
+
+    mutating func reset() {
+        period     = nil
+        confidence = 0
+        nextBeat   = nil
+        lastOnset  = nil
+        intervals.removeAll()
+    }
+}
+
 /// Spectral-flux onset detector: fires when a band's energy *rises* sharply
 /// relative to its recent rises. Detects beats in loud and quiet passages alike,
 /// because the threshold adapts to the stream.

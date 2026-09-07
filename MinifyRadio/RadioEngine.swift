@@ -206,6 +206,9 @@ class RadioEngine: NSObject, ObservableObject {
     private var midNorm     = AdaptiveNormalizer(halflife: 4, gate: 1e-3)
     private var trebleNorm  = AdaptiveNormalizer(halflife: 4, gate: 1e-3)
     private var bassOnset   = OnsetDetector(sensitivity: 2.2, refractory: 0.18, minFlux: 0.005)
+    private var tempo       = TempoTracker()
+    private var meterClock:  Double = 0     // audio-sample time, advanced by the tap
+    private var beatLead:    Double = 0.08  // fire early: output latency + shockwave rise
     // Slow visual envelopes: the field breathes with the piece's dynamics.
     // Fast musical events reach the waves only through beat pulses.
     private var bassEnv     = EnvelopeFollower(attack: 0.6, release: 2.5)
@@ -314,6 +317,7 @@ class RadioEngine: NSObject, ObservableObject {
         isPlaying        = true
         nowPlayingTitle  = "Connecting…"
         nowPlayingArtist = ""
+        beatLead         = Double(AVAudioSession.sharedInstance().outputLatency) + 0.08
         updateNowPlaying()
         startEnergyTimer()
 
@@ -543,8 +547,18 @@ class RadioEngine: NSObject, ObservableObject {
             tapMid    = midNorm.normalize(midRaw, dt: dt)
             tapTreble = trebleNorm.normalize(trebleRaw, dt: dt)
 
+            meterClock += dt
             if bassOnset.process(energy: bassRaw, dt: dt) {
-                let intensity = tapBass
+                tempo.registerOnset(at: meterClock)
+                // Reactive pulse only while the tracker hasn't locked a tempo —
+                // once locked, the predicted grid carries the beat instead.
+                if !tempo.isLocked {
+                    let intensity = tapBass
+                    DispatchQueue.main.async { [weak self] in self?.onBeat?(intensity) }
+                }
+            }
+            if tempo.consumeBeat(at: meterClock, lead: beatLead) {
+                let intensity = max(tapBass, 0.4)
                 DispatchQueue.main.async { [weak self] in self?.onBeat?(intensity) }
             }
     }
@@ -654,6 +668,8 @@ class RadioEngine: NSObject, ObservableObject {
         midNorm    = AdaptiveNormalizer(halflife: 4, gate: 1e-3)
         trebleNorm = AdaptiveNormalizer(halflife: 4, gate: 1e-3)
         bassOnset  = OnsetDetector(sensitivity: 2.2, refractory: 0.18, minFlux: 0.005)
+        tempo.reset()
+        meterClock = 0
         bassEnv    = EnvelopeFollower(attack: 0.6, release: 2.5)
         midEnv     = EnvelopeFollower(attack: 0.8, release: 3.0)
         trebleEnv  = EnvelopeFollower(attack: 0.5, release: 2.0)
