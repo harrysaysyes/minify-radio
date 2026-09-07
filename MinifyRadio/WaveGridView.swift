@@ -10,11 +10,6 @@ import SwiftUI
 private enum WaveCfg {
     static let xGap: Double            = 12
     static let yGap: Double            = 18
-    static let xScale: Double          = 0.002
-    static let yScale: Double          = 0.0015
-    static let speedX: Double          = 0.03
-    static let speedY: Double          = 0.015
-    static let angleGain: Double       = 6
     static let waveAmpY: Double        = 12
     // Touch interaction
     static let influenceRadius: Double = 350
@@ -46,7 +41,10 @@ final class WavePhysics: ObservableObject {
     private(set) var rows = 0
     private(set) var cols = 0
 
-    private var time:            Double = 0
+    private let field = WaveField()
+
+    /// Field time — advances faster when the mids are busy, so flow follows the music.
+    private var flowTime:        Double = 0
     private var lastTime:        Double = 0
     private(set) var initializedSize: CGSize = .zero
 
@@ -67,7 +65,7 @@ final class WavePhysics: ObservableObject {
     var trebleEnergy: Double = 0
 
     private var smoothedAmpY:    Double = WaveCfg.waveAmpY
-    private var smoothedXStretch: Double = 0
+    private var smoothedShimmer: Double = 0
 
     // MARK: Grid init
 
@@ -108,7 +106,7 @@ final class WavePhysics: ObservableObject {
         let rawDelta   = currentTime - lastTime
         let dtSeconds  = min(max(rawDelta, 1.0 / 120.0), 1.0 / 30.0)
         lastTime       = currentTime
-        time          += dtSeconds
+        flowTime      += dtSeconds * (0.6 + midEnergy * 1.4)
 
         let dtScale = dtSeconds * 60.0
 
@@ -181,28 +179,26 @@ final class WavePhysics: ObservableObject {
         let effAmpY      = WaveCfg.waveAmpY * (1.0 + bassResponse * WaveCfg.audioAmpMultiplier)
         smoothedAmpY    += (effAmpY - smoothedAmpY) * 0.12
 
-        // Treble → subtle compression toward screen centre
+        // Treble → fine shimmer octave
         let trebleResponse = pow(max(0, trebleEnergy), 1.2)
-        smoothedXStretch  += (trebleResponse * 0.06 - smoothedXStretch) * 0.15
-        let screenCentreX  = size.width / 2
+        smoothedShimmer   += (trebleResponse - smoothedShimmer) * 0.15
 
         let nc = cols
         guard nc > 0 else { return }
 
         // Phase 1: compute all row positions into allSmoothed
         for row in 0..<rows {
+            let rowFrac = rows > 1 ? Double(row) / Double(rows - 1) : 0
             for col in 0..<cols {
                 let i = row * cols + col
                 guard i < points.count else { break }
                 let p = points[i]
-                let noise = SimplexNoise.noise2D(
-                    p.baseX * WaveCfg.xScale + time * WaveCfg.speedX,
-                    p.baseY * WaveCfg.yScale + time * WaveCfg.speedY
+                let (wdx, wy) = field.displacement(
+                    x: p.baseX, y: p.baseY, rowFraction: rowFrac, time: flowTime,
+                    amplitude: smoothedAmpY, shimmer: smoothedShimmer
                 )
-                let wy  = sin(WaveCfg.angleGain * noise) * smoothedAmpY
-                let fx  = p.baseX + p.cx * WaveCfg.cursorXScale
-                let fxS = screenCentreX + (fx - screenCentreX) * (1.0 - smoothedXStretch)
-                rowBuf[col] = CGPoint(x: fxS, y: p.baseY + wy + p.cy)
+                let fx = p.baseX + wdx + p.cx * WaveCfg.cursorXScale
+                rowBuf[col] = CGPoint(x: fx, y: p.baseY + wy + p.cy)
             }
             // Bézier smoothing pass
             let base = row * nc

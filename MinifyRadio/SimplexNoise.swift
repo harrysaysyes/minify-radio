@@ -1,5 +1,4 @@
 // Faithful port of simplex-noise.js (Stefan Gustavson's implementation)
-// Random permutation table — matches JS behavior (random seed per launch)
 
 import Foundation
 
@@ -11,26 +10,23 @@ enum SimplexNoise {
         (0,1,1),(0,-1,1),(0,1,-1),(0,-1,-1)
     ]
 
-    // Random permutation (same approach as JS: Math.random() per index)
+    // Deterministic permutation table (splitmix64, fixed seed). The field and all
+    // generated wave art must be identical on every launch, and permMod12 must
+    // derive from this same table or gradient hashing breaks at cell borders.
     private static let perm: [Int] = {
-        var p = (0..<256).map { _ in Int.random(in: 0..<256) }
-        var result = [Int](repeating: 0, count: 512)
-        var resultMod12 = [Int](repeating: 0, count: 512)
-        for i in 0..<512 {
-            result[i] = p[i & 255]
-            resultMod12[i] = result[i] % 12
+        var state: UInt64 = 0x9E3779B97F4A7C15
+        func next() -> UInt64 {
+            state &+= 0x9E3779B97F4A7C15
+            var z = state
+            z = (z ^ (z >> 30)) &* 0xBF58476D1CE4E5B9
+            z = (z ^ (z >> 27)) &* 0x94D049BB133111EB
+            return z ^ (z >> 31)
         }
-        return result
+        let p = (0..<256).map { _ in Int(next() % 256) }
+        return (0..<512).map { p[$0 & 255] }
     }()
 
-    private static let permMod12: [Int] = {
-        var p = (0..<256).map { _ in Int.random(in: 0..<256) }
-        var result = [Int](repeating: 0, count: 512)
-        for i in 0..<512 {
-            result[i] = p[i & 255] % 12
-        }
-        return result
-    }()
+    private static let permMod12: [Int] = perm.map { $0 % 12 }
 
     private static func dot(_ g: (Int, Int, Int), _ x: Double, _ y: Double) -> Double {
         Double(g.0) * x + Double(g.1) * y
