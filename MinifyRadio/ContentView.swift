@@ -134,8 +134,8 @@ struct ContentView: View {
                 physics?.midEnergy    = mid
                 physics?.trebleEnergy = treble
             }
-            engine.onBeat = { [weak physics] in
-                physics?.triggerBeatPulse()
+            engine.onBeat = { [weak physics] intensity in
+                physics?.triggerBeatPulse(intensity: intensity)
             }
         }
         .sheet(isPresented: $showSupport) {

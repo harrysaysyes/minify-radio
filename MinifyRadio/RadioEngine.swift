@@ -152,7 +152,7 @@ class RadioEngine: NSObject, ObservableObject {
     @Published private(set) var nowPlayingArtist = ""
 
     var onEnergyUpdate: ((_ bass: Double, _ mid: Double, _ treble: Double) -> Void)?
-    var onBeat: (() -> Void)?
+    var onBeat: ((_ intensity: Double) -> Void)?
 
     // MARK: - Streaming engine
     //
@@ -542,7 +542,8 @@ class RadioEngine: NSObject, ObservableObject {
             tapTreble = trebleNorm.normalize(trebleRaw, dt: dt)
 
             if bassOnset.process(energy: bassRaw, dt: dt) {
-                DispatchQueue.main.async { [weak self] in self?.onBeat?() }
+                let intensity = tapBass
+                DispatchQueue.main.async { [weak self] in self?.onBeat?(intensity) }
             }
     }
 

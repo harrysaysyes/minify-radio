@@ -56,6 +56,7 @@ final class WavePhysics: ObservableObject {
     private var pActive          = false
 
     private var rowBuf:      [CGPoint] = []
+    private var fieldBuf:    [CGPoint] = []
     private var smoothedBuf: [CGPoint] = []
     private var allSmoothed: [CGPoint] = []
 
@@ -92,6 +93,7 @@ final class WavePhysics: ObservableObject {
         }
         points      = pts
         rowBuf      = [CGPoint](repeating: .zero, count: c)
+        fieldBuf    = [CGPoint](repeating: .zero, count: c)
         smoothedBuf = [CGPoint](repeating: .zero, count: c)
         allSmoothed = [CGPoint](repeating: .zero, count: r * c)
     }
@@ -148,12 +150,13 @@ final class WavePhysics: ObservableObject {
 
     // MARK: Beat / connect pulse — radial shockwave from screen centre
 
-    func triggerBeatPulse() {
+    func triggerBeatPulse(intensity: Double = 1.0) {
         guard !points.isEmpty, initializedSize != .zero else { return }
         let cx      = initializedSize.width  / 2
         let cy      = initializedSize.height / 2
         let maxR    = max(cx, cy) * 1.3
-        let strength = 9.0
+        // Soft beats ripple, drops slam
+        let strength = 5.0 + 8.0 * min(1.0, max(0.0, intensity))
 
         for i in 0..<points.count {
             let dx   = points[i].baseX - cx
@@ -189,19 +192,34 @@ final class WavePhysics: ObservableObject {
         // Phase 1: compute all row positions into allSmoothed
         for row in 0..<rows {
             let rowFrac = rows > 1 ? Double(row) / Double(rows - 1) : 0
-            for col in 0..<cols {
-                let i = row * cols + col
-                guard i < points.count else { break }
-                let p = points[i]
+            let base    = row * cols
+
+            // Field at even columns only, interpolated between — the field varies far
+            // slower than the grid spacing, and this halves the per-frame noise cost.
+            for col in stride(from: 0, to: cols, by: 2) {
+                let p = points[base + col]
                 let (wdx, wy) = field.displacement(
                     x: p.baseX, y: p.baseY, rowFraction: rowFrac, time: flowTime,
                     amplitude: smoothedAmpY, shimmer: smoothedShimmer
                 )
-                let fx = p.baseX + wdx + p.cx * WaveCfg.cursorXScale
-                rowBuf[col] = CGPoint(x: fx, y: p.baseY + wy + p.cy)
+                fieldBuf[col] = CGPoint(x: wdx, y: wy)
+            }
+            for col in stride(from: 1, to: cols, by: 2) {
+                fieldBuf[col] = col + 1 < cols
+                    ? CGPoint(x: (fieldBuf[col - 1].x + fieldBuf[col + 1].x) / 2,
+                              y: (fieldBuf[col - 1].y + fieldBuf[col + 1].y) / 2)
+                    : fieldBuf[col - 1]
+            }
+
+            // Combine with per-point spring state (touch response stays local)
+            for col in 0..<cols {
+                let p = points[base + col]
+                rowBuf[col] = CGPoint(
+                    x: p.baseX + fieldBuf[col].x + p.cx * WaveCfg.cursorXScale,
+                    y: p.baseY + fieldBuf[col].y + p.cy
+                )
             }
             // Bézier smoothing pass
-            let base = row * nc
             smoothedBuf[0] = rowBuf[0]
             if nc > 1 { smoothedBuf[nc - 1] = rowBuf[nc - 1] }
             for k in 1..<(nc - 1) {
