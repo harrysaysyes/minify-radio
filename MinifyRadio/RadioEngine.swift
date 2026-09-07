@@ -151,7 +151,8 @@ class RadioEngine: NSObject, ObservableObject {
     @Published private(set) var nowPlayingTitle  = "Select a station"
     @Published private(set) var nowPlayingArtist = ""
 
-    var onEnergyUpdate: ((_ bass: Double, _ treble: Double) -> Void)?
+    var onEnergyUpdate: ((_ bass: Double, _ mid: Double, _ treble: Double) -> Void)?
+    var onBeat: (() -> Void)?
 
     // MARK: - Streaming engine
     //
@@ -193,9 +194,21 @@ class RadioEngine: NSObject, ObservableObject {
     private var energyTimer:    Timer?
     private var energyPhase:    Double = 0
     private var bassSmoothed:   Double = 0
+    private var midSmoothed:    Double = 0
     private var trebleSmoothed: Double = 0
     private var tapBass:        Double = 0
+    private var tapMid:         Double = 0
     private var tapTreble:      Double = 0
+
+    // Musical hearing: per-band adaptive normalization (tap thread),
+    // attack/release envelopes (main timer), bass onset → beat pulse.
+    private var bassNorm    = AdaptiveNormalizer(halflife: 4, gate: 1e-3)
+    private var midNorm     = AdaptiveNormalizer(halflife: 4, gate: 1e-3)
+    private var trebleNorm  = AdaptiveNormalizer(halflife: 4, gate: 1e-3)
+    private var bassOnset   = OnsetDetector(sensitivity: 2.2, refractory: 0.18, minFlux: 0.005)
+    private var bassEnv     = EnvelopeFollower(attack: 0.03, release: 0.35)
+    private var midEnv      = EnvelopeFollower(attack: 0.05, release: 0.40)
+    private var trebleEnv   = EnvelopeFollower(attack: 0.02, release: 0.25)
 
     // FFT state — allocated once, reused each tap callback
     private var fftSetup:      FFTSetup?
@@ -252,7 +265,7 @@ class RadioEngine: NSObject, ObservableObject {
         currentStation   = nil
         nowPlayingTitle  = "Select a station"
         nowPlayingArtist = ""
-        onEnergyUpdate?(0, 0)
+        onEnergyUpdate?(0, 0, 0)
         updateNowPlaying()
     }
 
@@ -504,18 +517,33 @@ class RadioEngine: NSObject, ObservableObject {
             let binHz    = sampleRate / Double(fftN)
             let bassLo   = max(1, Int(20   / binHz))
             let bassHi   = Int(250  / binHz)
-            let trebLo   = Int(3000 / binHz)
+            let midLo    = bassHi + 1
+            let midHi    = Int(3000 / binHz)
+            let trebLo   = midHi + 1
             let trebHi   = min(Int(16000 / binHz), fftN / 2 - 1)
             let norm     = 1.0 / Float(fftN / 2)
 
-            var bSum: Float = 0, tSum: Float = 0
+            var bSum: Float = 0, mSum: Float = 0, tSum: Float = 0
             for b in bassLo...bassHi { bSum += fftMagBuf[b] }
+            for b in midLo...midHi   { mSum += fftMagBuf[b] }
             for b in trebLo...trebHi { tSum += fftMagBuf[b] }
 
             let bCount = Float(max(1, bassHi - bassLo + 1))
+            let mCount = Float(max(1, midHi  - midLo  + 1))
             let tCount = Float(max(1, trebHi - trebLo + 1))
-            tapBass   = tanh(Double(sqrt(bSum / bCount) * norm) * 8.0)
-            tapTreble = tanh(Double(sqrt(tSum / tCount) * norm) * 8.0)
+
+            let dt        = Double(frames) / sampleRate
+            let bassRaw   = Double(sqrt(bSum / bCount) * norm)
+            let midRaw    = Double(sqrt(mSum / mCount) * norm)
+            let trebleRaw = Double(sqrt(tSum / tCount) * norm)
+
+            tapBass   = bassNorm.normalize(bassRaw, dt: dt)
+            tapMid    = midNorm.normalize(midRaw, dt: dt)
+            tapTreble = trebleNorm.normalize(trebleRaw, dt: dt)
+
+            if bassOnset.process(energy: bassRaw, dt: dt) {
+                DispatchQueue.main.async { [weak self] in self?.onBeat?() }
+            }
     }
 
     // MARK: - Stream bytes → decoder (runs on decodeQueue)
@@ -612,33 +640,46 @@ class RadioEngine: NSObject, ObservableObject {
         stopEnergyTimer()
         energyPhase    = 0
         bassSmoothed   = 0
+        midSmoothed    = 0
         trebleSmoothed = 0
         tapBass        = 0
+        tapMid         = 0
         tapTreble      = 0
+
+        // Fresh hearing per station — the previous stream's loudness must not leak in
+        bassNorm   = AdaptiveNormalizer(halflife: 4, gate: 1e-3)
+        midNorm    = AdaptiveNormalizer(halflife: 4, gate: 1e-3)
+        trebleNorm = AdaptiveNormalizer(halflife: 4, gate: 1e-3)
+        bassOnset  = OnsetDetector(sensitivity: 2.2, refractory: 0.18, minFlux: 0.005)
+        bassEnv    = EnvelopeFollower(attack: 0.03, release: 0.35)
+        midEnv     = EnvelopeFollower(attack: 0.05, release: 0.40)
+        trebleEnv  = EnvelopeFollower(attack: 0.02, release: 0.25)
 
         energyTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             guard let self else { return }
-            self.energyPhase += 1.0 / 60.0
+            let dt = 1.0 / 60.0
+            self.energyPhase += dt
             let t = self.energyPhase
 
-            func lerp(_ current: Double, toward live: Double) -> Double {
-                let alpha = live > current ? 0.15 : 0.04
-                return current + (live - current) * alpha
-            }
-
-            if self.tapBass > 0.01 || self.tapTreble > 0.01 {
-                self.bassSmoothed   = lerp(self.bassSmoothed,   toward: self.tapBass)
-                self.trebleSmoothed = lerp(self.trebleSmoothed, toward: self.tapTreble)
+            if self.tapBass > 0.001 || self.tapMid > 0.001 || self.tapTreble > 0.001 {
+                self.bassSmoothed   = self.bassEnv.process(self.tapBass,     dt: dt)
+                self.midSmoothed    = self.midEnv.process(self.tapMid,       dt: dt)
+                self.trebleSmoothed = self.trebleEnv.process(self.tapTreble, dt: dt)
             } else {
-                // Idle drift — bass and treble phase-shifted so they move independently
+                // Idle drift — bands phase-shifted so they move independently
                 let a = 0.5 + 0.5 * sin(t * 0.31)
                 let b = 0.5 + 0.5 * sin(t * 0.71 + 2.1)
                 let c = 0.5 + 0.5 * sin(t * 1.33 + 0.8)
                 self.bassSmoothed   += ((a * 0.50 + b * 0.30 + c * 0.20) * 0.4 - self.bassSmoothed)   * 0.02
+                self.midSmoothed    += ((c * 0.50 + a * 0.30 + b * 0.20) * 0.3 - self.midSmoothed)    * 0.02
                 self.trebleSmoothed += ((b * 0.50 + c * 0.30 + a * 0.20) * 0.2 - self.trebleSmoothed) * 0.02
+                // Keep envelopes in step so returning audio doesn't jump
+                self.bassEnv.reset(to: self.bassSmoothed)
+                self.midEnv.reset(to: self.midSmoothed)
+                self.trebleEnv.reset(to: self.trebleSmoothed)
             }
 
-            self.onEnergyUpdate?(self.bassSmoothed, self.trebleSmoothed)
+            self.onEnergyUpdate?(self.bassSmoothed, self.midSmoothed, self.trebleSmoothed)
         }
     }
 
@@ -646,6 +687,7 @@ class RadioEngine: NSObject, ObservableObject {
         energyTimer?.invalidate()
         energyTimer = nil
         tapBass     = 0
+        tapMid      = 0
         tapTreble   = 0
     }
 

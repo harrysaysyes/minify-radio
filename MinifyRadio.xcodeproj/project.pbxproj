@@ -18,6 +18,9 @@
 		BFIL000000000000000000B /* IcyParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = FREF000000000000000000F /* IcyParser.swift */; };
 		BFIL000000000000000000C /* IcyParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FREF0000000000000000010 /* IcyParserTests.swift */; };
 		BFIL000000000000000000D /* IcyParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = FREF000000000000000000F /* IcyParser.swift */; };
+		BFIL000000000000000000E /* AudioReactivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = FREF0000000000000000012 /* AudioReactivity.swift */; };
+		BFIL000000000000000000F /* AudioReactivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = FREF0000000000000000012 /* AudioReactivity.swift */; };
+		BFIL0000000000000000010 /* AudioReactivityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FREF0000000000000000013 /* AudioReactivityTests.swift */; };
 		BFIL0000000000000000007 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FREF0000000000000000007 /* Assets.xcassets */; };
 		BFIL0000000000000000008 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = FREF000000000000000000A /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
@@ -40,6 +43,8 @@
 		FREF000000000000000000F /* IcyParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IcyParser.swift; sourceTree = "<group>"; };
 		FREF0000000000000000010 /* IcyParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IcyParserTests.swift; sourceTree = "<group>"; };
 		FREF0000000000000000011 /* MinifyRadioTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MinifyRadioTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		FREF0000000000000000012 /* AudioReactivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioReactivity.swift; sourceTree = "<group>"; };
+		FREF0000000000000000013 /* AudioReactivityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioReactivityTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -73,6 +78,7 @@
 			isa = PBXGroup;
 			children = (
 				FREF0000000000000000010 /* IcyParserTests.swift */,
+				FREF0000000000000000013 /* AudioReactivityTests.swift */,
 			);
 			path = MinifyRadioTests;
 			sourceTree = "<group>";
@@ -89,6 +95,7 @@
 				FREF000000000000000000C /* CarPlaySceneDelegate.swift */,
 				FREF000000000000000000E /* WaveArt.swift */,
 				FREF000000000000000000F /* IcyParser.swift */,
+				FREF0000000000000000012 /* AudioReactivity.swift */,
 				FREF000000000000000000D /* MinifyRadio.entitlements */,
 				FREF0000000000000000007 /* Assets.xcassets */,
 				FREF0000000000000000009 /* Info.plist */,
@@ -198,6 +205,7 @@
 				BFIL0000000000000000009 /* CarPlaySceneDelegate.swift in Sources */,
 				BFIL000000000000000000A /* WaveArt.swift in Sources */,
 				BFIL000000000000000000B /* IcyParser.swift in Sources */,
+				BFIL000000000000000000E /* AudioReactivity.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -207,6 +215,8 @@
 			files = (
 				BFIL000000000000000000C /* IcyParserTests.swift in Sources */,
 				BFIL000000000000000000D /* IcyParser.swift in Sources */,
+				BFIL000000000000000000F /* AudioReactivity.swift in Sources */,
+				BFIL0000000000000000010 /* AudioReactivityTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

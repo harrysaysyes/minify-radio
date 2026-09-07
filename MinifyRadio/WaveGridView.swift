@@ -63,6 +63,7 @@ final class WavePhysics: ObservableObject {
 
     /// Set externally by RadioEngine. Not @Published — avoids SwiftUI redraws.
     var bassEnergy:   Double = 0
+    var midEnergy:    Double = 0
     var trebleEnergy: Double = 0
 
     private var smoothedAmpY:    Double = WaveCfg.waveAmpY
