@@ -60,6 +60,14 @@ final class WavePhysics: ObservableObject {
     private var smoothedBuf: [CGPoint] = []
     private var allSmoothed: [CGPoint] = []
 
+    // Beat ripples — one expanding ring per beat, superposed. Geometry from the
+    // screen centre is static per grid, so it is precomputed in prepare().
+    private struct BeatRipple { let birth: Double; let strength: Double }
+    private var ripples:   [BeatRipple] = []
+    private var rippleDist: [Double] = []
+    private var rippleNX:   [Double] = []
+    private var rippleNY:   [Double] = []
+
     /// Set externally by RadioEngine. Not @Published — avoids SwiftUI redraws.
     var bassEnergy:   Double = 0
     var midEnergy:    Double = 0
@@ -96,6 +104,19 @@ final class WavePhysics: ObservableObject {
         fieldBuf    = [CGPoint](repeating: .zero, count: c)
         smoothedBuf = [CGPoint](repeating: .zero, count: c)
         allSmoothed = [CGPoint](repeating: .zero, count: r * c)
+
+        let cx = size.width / 2, cy = size.height / 2
+        rippleDist = [Double](repeating: 0, count: r * c)
+        rippleNX   = [Double](repeating: 0, count: r * c)
+        rippleNY   = [Double](repeating: 0, count: r * c)
+        for i in 0..<pts.count {
+            let dx = pts[i].baseX - cx
+            let dy = pts[i].baseY - cy
+            let d  = max(1, (dx * dx + dy * dy).squareRoot())
+            rippleDist[i] = d
+            rippleNX[i]   = dx / d
+            rippleNY[i]   = dy / d
+        }
     }
 
     // MARK: Physics update
@@ -109,6 +130,7 @@ final class WavePhysics: ObservableObject {
         let dtSeconds  = min(max(rawDelta, 1.0 / 120.0), 1.0 / 30.0)
         lastTime       = currentTime
         flowTime      += dtSeconds * (0.8 + midEnergy * 0.7)
+        ripples.removeAll { currentTime - $0.birth > 3 }
 
         let dtScale = dtSeconds * 60.0
 
@@ -148,27 +170,14 @@ final class WavePhysics: ObservableObject {
         }
     }
 
-    // MARK: Beat / connect pulse — radial shockwave from screen centre
+    // MARK: Beat pulse — each beat spawns its own expanding ring
 
     func triggerBeatPulse(intensity: Double = 1.0) {
         guard !points.isEmpty, initializedSize != .zero else { return }
-        let cx      = initializedSize.width  / 2
-        let cy      = initializedSize.height / 2
-        let maxR    = max(cx, cy) * 1.3
         // Soft beats ripple, drops slam — beats are the primary reaction
-        let strength = 6.0 + 10.0 * min(1.0, max(0.0, intensity))
-
-        for i in 0..<points.count {
-            let dx   = points[i].baseX - cx
-            let dy   = points[i].baseY - cy
-            let dist = (dx*dx + dy*dy).squareRoot()
-            guard dist > 0 else { continue }
-            let falloff = pow(max(0.0, 1.0 - dist / maxR), 1.5)
-            let nx = dx / dist
-            let ny = dy / dist
-            points[i].cvx += nx * strength * falloff
-            points[i].cvy += ny * strength * falloff
-        }
+        let strength = 10.0 + 16.0 * min(1.0, max(0.0, intensity))
+        ripples.append(BeatRipple(birth: lastTime, strength: strength))
+        if ripples.count > 8 { ripples.removeFirst() }
     }
 
     // MARK: Draw
@@ -211,12 +220,23 @@ final class WavePhysics: ObservableObject {
                     : fieldBuf[col - 1]
             }
 
-            // Combine with per-point spring state (touch response stays local)
+            // Combine with beat ripples and per-point spring state
             for col in 0..<cols {
-                let p = points[base + col]
+                let i = base + col
+                let p = points[i]
+                var rippleX = 0.0, rippleY = 0.0
+                for ripple in ripples {
+                    let amount = Ripple.displacement(dist: rippleDist[i],
+                                                     age: lastTime - ripple.birth,
+                                                     strength: ripple.strength)
+                    if amount != 0 {
+                        rippleX += rippleNX[i] * amount
+                        rippleY += rippleNY[i] * amount
+                    }
+                }
                 rowBuf[col] = CGPoint(
-                    x: p.baseX + fieldBuf[col].x + p.cx * WaveCfg.cursorXScale,
-                    y: p.baseY + fieldBuf[col].y + p.cy
+                    x: p.baseX + fieldBuf[col].x + rippleX + p.cx * WaveCfg.cursorXScale,
+                    y: p.baseY + fieldBuf[col].y + rippleY + p.cy
                 )
             }
             // Bézier smoothing pass

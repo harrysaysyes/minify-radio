@@ -62,6 +62,20 @@ final class TempoTrackerTests: XCTestCase {
         XCTAssertFalse(t.consumeBeat(at: 6.1, lead: 0))              // > 3.5 + 4×0.5
     }
 
+    func testGridOffsetIdentifiesOffbeatEvents() {
+        var t = TempoTracker()
+        for i in 0 ..< 8 { t.registerOnset(at: Double(i) * 0.5) }   // grid on 0.5s, next 4.0
+        XCTAssertEqual(t.gridOffset(of: 4.0)  ?? -1, 0.0, accuracy: 0.05)   // on the beat
+        XCTAssertEqual(t.gridOffset(of: 4.25) ?? -1, 0.5, accuracy: 0.05)   // maximally off
+        XCTAssertEqual(t.gridOffset(of: 4.55) ?? -1, 0.1, accuracy: 0.05)   // slightly late
+    }
+
+    func testGridOffsetIsNilWhenUnlocked() {
+        var t = TempoTracker()
+        t.registerOnset(at: 0)
+        XCTAssertNil(t.gridOffset(of: 1.0))
+    }
+
     func testResetClearsLock() {
         var t = TempoTracker()
         for i in 0 ..< 8 { t.registerOnset(at: Double(i) * 0.5) }

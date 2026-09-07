@@ -205,7 +205,7 @@ class RadioEngine: NSObject, ObservableObject {
     private var bassNorm    = AdaptiveNormalizer(halflife: 4, gate: 1e-3)
     private var midNorm     = AdaptiveNormalizer(halflife: 4, gate: 1e-3)
     private var trebleNorm  = AdaptiveNormalizer(halflife: 4, gate: 1e-3)
-    private var bassOnset   = OnsetDetector(sensitivity: 2.2, refractory: 0.18, minFlux: 0.005)
+    private var bassOnset   = OnsetDetector(sensitivity: 2.2, refractory: 0.12, minFlux: 0.005)
     private var tempo       = TempoTracker()
     private var meterClock:  Double = 0     // audio-sample time, advanced by the tap
     private var beatLead:    Double = 0.08  // fire early: output latency + shockwave rise
@@ -550,10 +550,12 @@ class RadioEngine: NSObject, ObservableObject {
             meterClock += dt
             if bassOnset.process(energy: bassRaw, dt: dt) {
                 tempo.registerOnset(at: meterClock)
-                // Reactive pulse only while the tracker hasn't locked a tempo —
-                // once locked, the predicted grid carries the beat instead.
-                if !tempo.isLocked {
-                    let intensity = tapBass
+                // Unlocked: react directly. Locked: the predicted grid carries the
+                // beat, but events clearly off the grid (snares, syncopation) still
+                // get their own softer ripple.
+                let offGrid = tempo.gridOffset(of: meterClock)
+                if offGrid == nil || offGrid! > 0.2 {
+                    let intensity = tapBass * (offGrid == nil ? 1.0 : 0.7)
                     DispatchQueue.main.async { [weak self] in self?.onBeat?(intensity) }
                 }
             }
@@ -667,7 +669,7 @@ class RadioEngine: NSObject, ObservableObject {
         bassNorm   = AdaptiveNormalizer(halflife: 4, gate: 1e-3)
         midNorm    = AdaptiveNormalizer(halflife: 4, gate: 1e-3)
         trebleNorm = AdaptiveNormalizer(halflife: 4, gate: 1e-3)
-        bassOnset  = OnsetDetector(sensitivity: 2.2, refractory: 0.18, minFlux: 0.005)
+        bassOnset  = OnsetDetector(sensitivity: 2.2, refractory: 0.12, minFlux: 0.005)
         tempo.reset()
         meterClock = 0
         bassEnv    = EnvelopeFollower(attack: 0.6, release: 2.5)

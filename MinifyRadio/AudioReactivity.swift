@@ -109,6 +109,16 @@ struct TempoTracker {
         return true
     }
 
+    /// Normalized distance (0 = on the beat, 0.5 = maximally off) of `time`
+    /// from the locked grid — lets offbeat accents be treated as their own events.
+    func gridOffset(of time: Double) -> Double? {
+        guard isLocked, let p = period, let beat = nextBeat else { return nil }
+        var offset = (time - beat).truncatingRemainder(dividingBy: p)
+        if offset >  p / 2 { offset -= p }
+        if offset < -p / 2 { offset += p }
+        return abs(offset) / p
+    }
+
     mutating func reset() {
         period     = nil
         confidence = 0

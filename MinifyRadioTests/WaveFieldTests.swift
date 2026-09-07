@@ -24,6 +24,45 @@ final class SimplexNoiseTests: XCTestCase {
     }
 }
 
+final class RippleTests: XCTestCase {
+
+    func testRingFrontPeaksWhereRadiusMeetsDistance() {
+        let dist = 300.0
+        let ageAtFront = dist / Ripple.speed
+        let atFront  = Ripple.displacement(dist: dist, age: ageAtFront,       strength: 20)
+        let before   = Ripple.displacement(dist: dist, age: ageAtFront * 0.4, strength: 20)
+        let after    = Ripple.displacement(dist: dist, age: ageAtFront + 0.5, strength: 20)
+        XCTAssertGreaterThan(atFront, before)
+        XCTAssertGreaterThan(atFront, after)
+        XCTAssertGreaterThan(atFront, 5)
+    }
+
+    func testRippleFadesWithAge() {
+        // Same relative front position, later in life → weaker
+        let young = Ripple.displacement(dist: Ripple.speed * 0.2, age: 0.2, strength: 20)
+        let old   = Ripple.displacement(dist: Ripple.speed * 1.5, age: 1.5, strength: 20)
+        XCTAssertGreaterThan(young, old * 3)
+    }
+
+    func testDeadAndUnbornRipplesContributeNothing() {
+        XCTAssertEqual(Ripple.displacement(dist: 100, age: -0.1, strength: 20), 0)
+        XCTAssertEqual(Ripple.displacement(dist: 100, age: 4.0,  strength: 20), 0)
+    }
+
+    func testFarFromFrontIsZero() {
+        // Ring at radius ~520px; a point at 100px is far behind the front
+        XCTAssertEqual(Ripple.displacement(dist: 100, age: 1.0, strength: 20), 0)
+    }
+
+    func testStrengthScalesLinearly() {
+        let dist = 200.0
+        let age  = dist / Ripple.speed
+        let a = Ripple.displacement(dist: dist, age: age, strength: 10)
+        let b = Ripple.displacement(dist: dist, age: age, strength: 20)
+        XCTAssertEqual(b, a * 2, accuracy: 1e-9)
+    }
+}
+
 final class WaveFieldTests: XCTestCase {
 
     private let field = WaveField()

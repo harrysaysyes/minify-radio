@@ -58,3 +58,24 @@ struct WaveField {
         return (dx, dy)
     }
 }
+
+/// A beat ripple: an expanding ring, like a drop hitting water. Each beat spawns
+/// its own ring with its own birth time; rings coexist and superpose, so fast
+/// music gets one visible reaction per hit instead of one smeared excursion.
+enum Ripple {
+
+    /// Ring expansion speed, px/s.
+    static let speed = 520.0
+
+    /// Ring front thickness, px.
+    static let width = 90.0
+
+    /// Displacement magnitude at `dist` from the ripple origin, `age` seconds
+    /// after the beat. Zero before birth and after ~3 s of decay.
+    static func displacement(dist: Double, age: Double, strength: Double) -> Double {
+        guard age >= 0, age < 3 else { return 0 }
+        let front = (dist - age * speed) / width
+        guard abs(front) < 3 else { return 0 }
+        return strength * exp(-front * front) * exp(-age * 1.8)
+    }
+}
