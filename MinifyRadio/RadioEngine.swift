@@ -2,6 +2,7 @@ import AVFoundation
 import MediaPlayer
 import AudioToolbox
 import Accelerate
+import UIKit
 
 // MARK: - Station model
 
@@ -121,6 +122,10 @@ private func _converterDataProc(
 
 class RadioEngine: NSObject, ObservableObject {
 
+    // Single instance shared by the phone UI and the CarPlay scene —
+    // both must observe and control the same playback state.
+    static let shared = RadioEngine()
+
     // MARK: - Default stations
 
     static let defaultStations: [Station] = [
@@ -155,6 +160,11 @@ class RadioEngine: NSObject, ObservableObject {
     private var audioConverter:  AudioConverterRef?
     private var pcmFormat:       AVAudioFormat?
     private var streamTask:      URLSessionDataTask?
+
+    // Track artwork: looked up per ICY title, wave art until it arrives
+    private var trackArtwork:  MPMediaItemArtwork?
+    private var artworkTask:   Task<Void, Never>?
+    private var artworkCache = [String: MPMediaItemArtwork]()
 
     private var icyMetaInt:      Int = 0
     private var icyBytesRead:    Int = 0
@@ -195,7 +205,7 @@ class RadioEngine: NSObject, ObservableObject {
 
     // MARK: - Init
 
-    override init() {
+    private override init() {
         let saved = UserDefaults.standard.data(forKey: "radio_stations")
             .flatMap { try? JSONDecoder().decode([Station].self, from: $0) }
         stations = (saved?.count == 3) ? saved! : RadioEngine.defaultStations
@@ -228,6 +238,10 @@ class RadioEngine: NSObject, ObservableObject {
         // Stop playback
         player?.pause()
         player = nil
+
+        artworkTask?.cancel()
+        artworkTask  = nil
+        trackArtwork = nil
 
         stopEnergyTimer()
         isPlaying        = false
@@ -270,9 +284,9 @@ class RadioEngine: NSObject, ObservableObject {
         return try JSONDecoder().decode([RadioBrowserStation].self, from: data)
     }
 
-    // MARK: - Private: play
+    // MARK: - Play
 
-    private func play(_ station: Station) {
+    func play(_ station: Station) {
         stop()
         guard let url = URL(string: station.url) else { return }
         try? AVAudioSession.sharedInstance().setActive(true)
@@ -515,8 +529,45 @@ class RadioEngine: NSObject, ObservableObject {
                 self.nowPlayingTitle  = title
                 self.nowPlayingArtist = ""
             }
+            self.fetchTrackArtwork(query: title)
             self.updateNowPlaying()
         }
+    }
+
+    // MARK: - Track artwork (iTunes Search — no key, no account)
+
+    private func fetchTrackArtwork(query rawQuery: String) {
+        artworkTask?.cancel()
+        trackArtwork = nil
+        let query = rawQuery.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return }
+        if let hit = artworkCache[query] { trackArtwork = hit; return }
+
+        artworkTask = Task { [weak self] in
+            guard let art = await RadioEngine.lookupArtwork(query: query) else { return }
+            await MainActor.run {
+                guard let self, !Task.isCancelled else { return }
+                self.artworkCache[query] = art
+                self.trackArtwork = art
+                self.updateNowPlaying()
+            }
+        }
+    }
+
+    private static func lookupArtwork(query: String) async -> MPMediaItemArtwork? {
+        struct SearchResponse: Codable {
+            struct Result: Codable { let artworkUrl100: String? }
+            let results: [Result]
+        }
+        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+        guard let url = URL(string: "https://itunes.apple.com/search?media=music&limit=1&term=\(encoded)"),
+              let (data, _) = try? await URLSession.shared.data(from: url),
+              let response  = try? JSONDecoder().decode(SearchResponse.self, from: data),
+              let thumbUrl  = response.results.first?.artworkUrl100,
+              let artUrl    = URL(string: thumbUrl.replacingOccurrences(of: "100x100", with: "600x600")),
+              let (imgData, _) = try? await URLSession.shared.data(from: artUrl),
+              let image = UIImage(data: imgData) else { return nil }
+        return MPMediaItemArtwork(boundsSize: image.size) { _ in image }
     }
 
     // MARK: - Audio session
@@ -628,6 +679,9 @@ class RadioEngine: NSObject, ObservableObject {
         info[MPMediaItemPropertyArtist]     = nowPlayingArtist.isEmpty ? (currentStation?.tagline ?? "") : nowPlayingArtist
         info[MPMediaItemPropertyAlbumTitle] = currentStation?.name ?? "Minify Radio"
         info[MPNowPlayingInfoPropertyIsLiveStream] = true
+        if let station = currentStation {
+            info[MPMediaItemPropertyArtwork] = trackArtwork ?? WaveArt.artwork(for: station)
+        }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         MPNowPlayingInfoCenter.default().playbackState  = isPlaying ? .playing : .paused
     }

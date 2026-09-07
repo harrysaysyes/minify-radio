@@ -13,7 +13,10 @@
 		BFIL0000000000000000004 /* IAPManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = FREF0000000000000000004 /* IAPManager.swift */; };
 		BFIL0000000000000000005 /* WaveGridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FREF0000000000000000005 /* WaveGridView.swift */; };
 		BFIL0000000000000000006 /* SimplexNoise.swift in Sources */ = {isa = PBXBuildFile; fileRef = FREF0000000000000000006 /* SimplexNoise.swift */; };
+		BFIL0000000000000000009 /* CarPlaySceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FREF000000000000000000C /* CarPlaySceneDelegate.swift */; };
+		BFIL000000000000000000A /* WaveArt.swift in Sources */ = {isa = PBXBuildFile; fileRef = FREF000000000000000000E /* WaveArt.swift */; };
 		BFIL0000000000000000007 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FREF0000000000000000007 /* Assets.xcassets */; };
+		BFIL0000000000000000008 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = FREF000000000000000000A /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,6 +29,11 @@
 		FREF0000000000000000007 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		FREF0000000000000000008 /* MinifyRadio.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MinifyRadio.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FREF0000000000000000009 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		FREF000000000000000000A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		FREF000000000000000000B /* MinifyRadio.storekit */ = {isa = PBXFileReference; lastKnownFileType = text; path = MinifyRadio.storekit; sourceTree = "<group>"; };
+		FREF000000000000000000C /* CarPlaySceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlaySceneDelegate.swift; sourceTree = "<group>"; };
+		FREF000000000000000000D /* MinifyRadio.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MinifyRadio.entitlements; sourceTree = "<group>"; };
+		FREF000000000000000000E /* WaveArt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveArt.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -56,8 +64,13 @@
 				FREF0000000000000000004 /* IAPManager.swift */,
 				FREF0000000000000000005 /* WaveGridView.swift */,
 				FREF0000000000000000006 /* SimplexNoise.swift */,
+				FREF000000000000000000C /* CarPlaySceneDelegate.swift */,
+				FREF000000000000000000E /* WaveArt.swift */,
+				FREF000000000000000000D /* MinifyRadio.entitlements */,
 				FREF0000000000000000007 /* Assets.xcassets */,
 				FREF0000000000000000009 /* Info.plist */,
+				FREF000000000000000000A /* PrivacyInfo.xcprivacy */,
+				FREF000000000000000000B /* MinifyRadio.storekit */,
 			);
 			path = MinifyRadio;
 			sourceTree = "<group>";
@@ -124,6 +137,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				BFIL0000000000000000007 /* Assets.xcassets in Resources */,
+				BFIL0000000000000000008 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -140,6 +154,8 @@
 				BFIL0000000000000000004 /* IAPManager.swift in Sources */,
 				BFIL0000000000000000005 /* WaveGridView.swift in Sources */,
 				BFIL0000000000000000006 /* SimplexNoise.swift in Sources */,
+				BFIL0000000000000000009 /* CarPlaySceneDelegate.swift in Sources */,
+				BFIL000000000000000000A /* WaveArt.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -219,13 +235,18 @@
 		CONF0000000000000000003 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_ENTITLEMENTS = "";
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = MinifyRadio/MinifyRadio.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = RYRWMY3666;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MinifyRadio/Info.plist;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = NO;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
@@ -246,13 +267,18 @@
 		CONF0000000000000000004 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				CODE_SIGN_ENTITLEMENTS = "";
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = MinifyRadio/MinifyRadio.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = RYRWMY3666;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MinifyRadio/Info.plist;
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = NO;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";

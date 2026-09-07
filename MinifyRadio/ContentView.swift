@@ -23,7 +23,7 @@ private struct SlotEdit: Identifiable { let id: Int }
 
 struct ContentView: View {
 
-    @StateObject private var engine  = RadioEngine()
+    @ObservedObject private var engine = RadioEngine.shared
     @StateObject private var iap     = IAPManager()
     @StateObject private var physics = WavePhysics()
 
@@ -51,14 +51,16 @@ struct ContentView: View {
                 // ── Player card ──────────────────────────────────────
                 VStack(spacing: 0) {
 
-                    // App / station header
-                    Text(engine.currentStation?.name ?? "Minify Radio")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.45))
-                        .kerning(0.3)
-                        .animation(.easeInOut(duration: 0.4), value: engine.currentStation?.name)
+                    // App / station header — hidden once a station is selected
+                    if engine.currentStation == nil {
+                        Text("Minify Radio")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.45))
+                            .kerning(0.3)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
 
-                    Spacer().frame(height: 22)
+                    Spacer().frame(height: 28)
 
                     // Now playing
                     VStack(spacing: 5) {
@@ -84,10 +86,10 @@ struct ContentView: View {
                     }
                     .frame(minHeight: 54)
 
-                    Spacer().frame(height: 28)
+                    Spacer().frame(height: 36)
 
                     // Station buttons
-                    HStack(spacing: 10) {
+                    HStack(spacing: 12) {
                         ForEach(Array(engine.stations.enumerated()), id: \.offset) { i, station in
                             StationButton(
                                 station:  station,
@@ -99,7 +101,7 @@ struct ContentView: View {
                         }
                     }
 
-                    Spacer().frame(height: 22)
+                    Spacer().frame(height: 32)
 
                     // Support
                     Button { showSupport = true } label: {
@@ -110,6 +112,7 @@ struct ContentView: View {
                     }
                 }
                 .padding(28)
+                .animation(.easeInOut(duration: 0.4), value: engine.currentStation == nil)
                 .background(cardBackground)
                 .shadow(color: .black.opacity(0.55), radius: 30, y: 20)
                 .shadow(color: accent.opacity(engine.isPlaying ? 0.30 : 0), radius: 45, y: 10)
@@ -117,9 +120,9 @@ struct ContentView: View {
                 .shadow(color: accent.opacity(engine.isPlaying ? 0.10 : 0), radius: 130)
                 .animation(.easeInOut(duration: 0.8), value: engine.isPlaying)
                 .frame(
-                    maxWidth:  geo.size.width  * 0.88,
-                    minHeight: geo.size.height * 0.72,
-                    maxHeight: geo.size.height * 0.86
+                    maxWidth:  geo.size.width  * 0.92,
+                    minHeight: geo.size.height * 0.80,
+                    maxHeight: geo.size.height * 0.92
                 )
             }
             .frame(width: geo.size.width, height: geo.size.height)
@@ -169,54 +172,40 @@ private struct StationButton: View {
     let onEdit:   () -> Void
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
-            // Play / stop tap area
-            Button(action: onPlay) {
-                VStack(spacing: 5) {
-                    if let logoUrl = station.logoUrl, let url = URL(string: logoUrl) {
-                        AsyncImage(url: url) { phase in
-                            if let img = phase.image {
-                                img.resizable().scaledToFill()
-                                    .frame(width: 28, height: 28)
-                                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                            }
+        Button(action: onPlay) {
+            VStack(spacing: 5) {
+                if let logoUrl = station.logoUrl, let url = URL(string: logoUrl) {
+                    AsyncImage(url: url) { phase in
+                        if let img = phase.image {
+                            img.resizable().scaledToFill()
+                                .frame(width: 28, height: 28)
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
                         }
                     }
-
-                    Text(station.name)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(isActive ? Color(white: 0.08) : .white)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.75)
-
-                    Text(station.tagline)
-                        .font(.system(size: 10))
-                        .foregroundColor(isActive ? Color(white: 0.08).opacity(0.60) : .white.opacity(0.35))
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.75)
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: 80)
-                .padding(.horizontal, 6)
-                .background(isActive ? accent : accent.opacity(0.10))
-                .cornerRadius(14)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14)
-                        .strokeBorder(accent.opacity(isActive ? 0 : 0.28), lineWidth: 1)
-                )
-            }
-            .animation(.easeInOut(duration: 0.2), value: isActive)
 
-            // Edit pencil — sits in corner, small touch target, doesn't occlude button content
-            Button(action: onEdit) {
-                Image(systemName: "pencil")
-                    .font(.system(size: 8, weight: .medium))
-                    .foregroundColor(.white.opacity(0.25))
-                    .padding(8)
+                Text(station.name)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(isActive ? Color(white: 0.08) : .white)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.75)
             }
+            .frame(maxWidth: .infinity)
+            .frame(height: 90)
+            .padding(.horizontal, 6)
+            .background(isActive ? accent : accent.opacity(0.10))
+            .cornerRadius(14)
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .strokeBorder(accent.opacity(isActive ? 0 : 0.28), lineWidth: 1)
+            )
         }
+        .animation(.easeInOut(duration: 0.2), value: isActive)
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.5)
+                .onEnded { _ in onEdit() }
+        )
     }
 }
 
