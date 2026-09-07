@@ -72,7 +72,9 @@ enum Ripple {
 
     /// Displacement magnitude at `dist` from the ripple origin, `age` seconds
     /// after the beat. Zero before birth and after ~3 s of decay.
-    static func displacement(dist: Double, age: Double, strength: Double) -> Double {
+    static func displacement(dist: Double, age: Double, strength: Double,
+                             speed: Double = Ripple.speed,
+                             width: Double = Ripple.width) -> Double {
         guard age >= 0, age < 3 else { return 0 }
         let front = (dist - age * speed) / width
         guard abs(front) < 3 else { return 0 }

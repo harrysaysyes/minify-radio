@@ -21,8 +21,6 @@ private enum WaveCfg {
     // Spring physics
     static let tension: Double         = 0.035
     static let friction: Double        = 0.88
-    // Audio reactivity multiplier (matches wave-grid.js audioAmplitudeMultiplier)
-    static let audioAmpMultiplier: Double = 0.9
 }
 
 // MARK: - Physics state (class so Canvas closure can mutate it)
@@ -41,7 +39,7 @@ final class WavePhysics: ObservableObject {
     private(set) var rows = 0
     private(set) var cols = 0
 
-    private let field = WaveField()
+    private var field = WaveField()
 
     /// Field time — advances faster when the mids are busy, so flow follows the music.
     private var flowTime:        Double = 0
@@ -129,7 +127,13 @@ final class WavePhysics: ObservableObject {
         let rawDelta   = currentTime - lastTime
         let dtSeconds  = min(max(rawDelta, 1.0 / 120.0), 1.0 / 30.0)
         lastTime       = currentTime
-        flowTime      += dtSeconds * (0.8 + midEnergy * 0.7)
+
+        let tuning = WaveTuning.shared
+        field.warp          = tuning.warp
+        field.gerstnerAmp   = tuning.gerstnerAmp
+        field.gerstnerSpeed = tuning.gerstnerSpeed
+        field.shimmerAmp    = tuning.shimmer
+        flowTime           += dtSeconds * (tuning.flowBase + midEnergy * tuning.flowMid)
         ripples.removeAll { currentTime - $0.birth > 3 }
 
         let dtScale = dtSeconds * 60.0
@@ -175,7 +179,8 @@ final class WavePhysics: ObservableObject {
     func triggerBeatPulse(intensity: Double = 1.0) {
         guard !points.isEmpty, initializedSize != .zero else { return }
         // Soft beats ripple, drops slam — beats are the primary reaction
-        let strength = 10.0 + 16.0 * min(1.0, max(0.0, intensity))
+        let tuning   = WaveTuning.shared
+        let strength = tuning.beatBase + tuning.beatScale * min(1.0, max(0.0, intensity))
         ripples.append(BeatRipple(birth: lastTime, strength: strength))
         if ripples.count > 8 { ripples.removeFirst() }
     }
@@ -188,7 +193,7 @@ final class WavePhysics: ObservableObject {
 
         // Bass → wave height
         let bassResponse = pow(max(0, bassEnergy), 1.5)
-        let effAmpY      = WaveCfg.waveAmpY * (1.0 + bassResponse * WaveCfg.audioAmpMultiplier)
+        let effAmpY      = WaveCfg.waveAmpY * (1.0 + bassResponse * WaveTuning.shared.ampMultiplier)
         smoothedAmpY    += (effAmpY - smoothedAmpY) * 0.12
 
         // Treble → fine shimmer octave
@@ -228,7 +233,9 @@ final class WavePhysics: ObservableObject {
                 for ripple in ripples {
                     let amount = Ripple.displacement(dist: rippleDist[i],
                                                      age: lastTime - ripple.birth,
-                                                     strength: ripple.strength)
+                                                     strength: ripple.strength,
+                                                     speed: WaveTuning.shared.rippleSpeed,
+                                                     width: WaveTuning.shared.rippleWidth)
                     if amount != 0 {
                         rippleX += rippleNX[i] * amount
                         rippleY += rippleNY[i] * amount
