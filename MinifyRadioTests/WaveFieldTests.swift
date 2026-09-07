@@ -56,14 +56,15 @@ final class WaveFieldTests: XCTestCase {
     }
 
     func testSpatialContinuity() {
-        // One-pixel steps must not jump — smooth lines, no tearing
+        // One-pixel steps must not jump. The warped field's worst-case honest
+        // slope is ~1.5 px/px; tearing (the mismatched-table bug) was 5–10 px.
         for i in 0 ..< 200 {
             let x = Double(i) * 3.1
             let a = field.displacement(x: x,     y: 180, rowFraction: 0.5, time: 30,
                                        amplitude: 12, shimmer: 0.5)
             let b = field.displacement(x: x + 1, y: 180, rowFraction: 0.5, time: 30,
                                        amplitude: 12, shimmer: 0.5)
-            XCTAssertLessThan(abs(a.dy - b.dy), 1.5)
+            XCTAssertLessThan(abs(a.dy - b.dy), 2.5)
             XCTAssertLessThan(abs(a.dx - b.dx), 0.5)
         }
     }

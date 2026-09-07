@@ -22,7 +22,7 @@ private enum WaveCfg {
     static let tension: Double         = 0.035
     static let friction: Double        = 0.88
     // Audio reactivity multiplier (matches wave-grid.js audioAmplitudeMultiplier)
-    static let audioAmpMultiplier: Double = 4.0
+    static let audioAmpMultiplier: Double = 1.4
 }
 
 // MARK: - Physics state (class so Canvas closure can mutate it)
@@ -108,7 +108,7 @@ final class WavePhysics: ObservableObject {
         let rawDelta   = currentTime - lastTime
         let dtSeconds  = min(max(rawDelta, 1.0 / 120.0), 1.0 / 30.0)
         lastTime       = currentTime
-        flowTime      += dtSeconds * (0.6 + midEnergy * 1.4)
+        flowTime      += dtSeconds * (0.5 + midEnergy * 0.5)
 
         let dtScale = dtSeconds * 60.0
 
@@ -155,8 +155,8 @@ final class WavePhysics: ObservableObject {
         let cx      = initializedSize.width  / 2
         let cy      = initializedSize.height / 2
         let maxR    = max(cx, cy) * 1.3
-        // Soft beats ripple, drops slam
-        let strength = 5.0 + 8.0 * min(1.0, max(0.0, intensity))
+        // Soft beats ripple, drops slam — beats are the primary reaction
+        let strength = 6.0 + 10.0 * min(1.0, max(0.0, intensity))
 
         for i in 0..<points.count {
             let dx   = points[i].baseX - cx

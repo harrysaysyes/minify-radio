@@ -206,9 +206,11 @@ class RadioEngine: NSObject, ObservableObject {
     private var midNorm     = AdaptiveNormalizer(halflife: 4, gate: 1e-3)
     private var trebleNorm  = AdaptiveNormalizer(halflife: 4, gate: 1e-3)
     private var bassOnset   = OnsetDetector(sensitivity: 2.2, refractory: 0.18, minFlux: 0.005)
-    private var bassEnv     = EnvelopeFollower(attack: 0.03, release: 0.35)
-    private var midEnv      = EnvelopeFollower(attack: 0.05, release: 0.40)
-    private var trebleEnv   = EnvelopeFollower(attack: 0.02, release: 0.25)
+    // Slow visual envelopes: the field breathes with the piece's dynamics.
+    // Fast musical events reach the waves only through beat pulses.
+    private var bassEnv     = EnvelopeFollower(attack: 0.6, release: 2.5)
+    private var midEnv      = EnvelopeFollower(attack: 0.8, release: 3.0)
+    private var trebleEnv   = EnvelopeFollower(attack: 0.5, release: 2.0)
 
     // FFT state — allocated once, reused each tap callback
     private var fftSetup:      FFTSetup?
@@ -652,9 +654,9 @@ class RadioEngine: NSObject, ObservableObject {
         midNorm    = AdaptiveNormalizer(halflife: 4, gate: 1e-3)
         trebleNorm = AdaptiveNormalizer(halflife: 4, gate: 1e-3)
         bassOnset  = OnsetDetector(sensitivity: 2.2, refractory: 0.18, minFlux: 0.005)
-        bassEnv    = EnvelopeFollower(attack: 0.03, release: 0.35)
-        midEnv     = EnvelopeFollower(attack: 0.05, release: 0.40)
-        trebleEnv  = EnvelopeFollower(attack: 0.02, release: 0.25)
+        bassEnv    = EnvelopeFollower(attack: 0.6, release: 2.5)
+        midEnv     = EnvelopeFollower(attack: 0.8, release: 3.0)
+        trebleEnv  = EnvelopeFollower(attack: 0.5, release: 2.0)
 
         energyTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             guard let self else { return }

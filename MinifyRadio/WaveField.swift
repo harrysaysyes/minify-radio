@@ -13,8 +13,8 @@ struct WaveField {
 
     var xScale = 0.002
     var yScale = 0.0015
-    var speedX = 0.03
-    var speedY = 0.015
+    var speedX = 0.022
+    var speedY = 0.011
 
     /// Warp strength in noise-space units.
     var warp = 0.35
@@ -27,8 +27,8 @@ struct WaveField {
     var gerstnerWavelength = 240.0
     var gerstnerSpeed      = 0.35
 
-    /// Fine treble octave, as a fraction of amplitude.
-    var shimmerAmp = 0.35
+    /// Fine treble octave, as a fraction of amplitude — a sparkle, not jitter.
+    var shimmerAmp = 0.12
 
     /// Keeps the sin(gain·noise) fold of the original look.
     var angleGain = 6.0
@@ -49,7 +49,7 @@ struct WaveField {
         var dy = sin(angleGain * n) * amplitude
 
         if shimmer > 0.001 {
-            dy += SimplexNoise.noise2D(u * 6.7 + time * 1.9, v * 6.1)
+            dy += SimplexNoise.noise2D(u * 6.7 + time * 0.6, v * 6.1)
                 * amplitude * shimmerAmp * shimmer
         }
 
