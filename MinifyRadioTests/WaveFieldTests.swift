@@ -63,6 +63,48 @@ final class RippleTests: XCTestCase {
     }
 }
 
+final class WaveCollisionTests: XCTestCase {
+
+    func testWellSeparatedLinesAreUntouched() {
+        var y = [0.0, 20.0, 40.0]   // one column, three rows, restGap 6
+        WaveCollision.resolve(&y, rows: 3, cols: 1, restGap: 6, hardGap: 1.5)
+        XCTAssertEqual(y, [0.0, 20.0, 40.0])
+    }
+
+    func testIntrusionIsSharedSymmetrically() {
+        var y = [10.0, 12.0]        // 2px apart, restGap 6 → each moves 2px
+        WaveCollision.resolve(&y, rows: 2, cols: 1, restGap: 6, hardGap: 1.5)
+        XCTAssertEqual(y[0], 8.0,  accuracy: 0.01)
+        XCTAssertEqual(y[1], 14.0, accuracy: 0.01)
+        XCTAssertEqual(y[1] - y[0], 6.0, accuracy: 0.01)
+    }
+
+    func testPushPropagatesUpTheStack() {
+        // Rows resting exactly at the gap; the bottom row surges up 12px.
+        // The push must travel: the TOP row also rises.
+        var y = [0.0, 6.0, 12.0, 18.0 - 12.0]
+        WaveCollision.resolve(&y, rows: 4, cols: 1, restGap: 6, hardGap: 1.5)
+        XCTAssertLessThan(y[0], 0.0)                       // top row pushed up
+        for r in 1 ..< 4 { XCTAssertGreaterThan(y[r], y[r - 1]) }
+    }
+
+    func testOrderingIsGuaranteedEvenForExtremeCrossings() {
+        var y = [50.0, 10.0, 30.0, -20.0]                  // wildly crossed
+        WaveCollision.resolve(&y, rows: 4, cols: 1, restGap: 6, hardGap: 1.5)
+        for r in 1 ..< 4 { XCTAssertGreaterThanOrEqual(y[r] - y[r - 1], 1.5 - 0.01) }
+    }
+
+    func testColumnsAreIndependent() {
+        // 2 rows × 2 cols: only column 0 collides
+        var y = [0.0, 100.0,
+                 2.0, 120.0]
+        WaveCollision.resolve(&y, rows: 2, cols: 2, restGap: 6, hardGap: 1.5)
+        XCTAssertEqual(y[1], 100.0)                        // col 1 untouched
+        XCTAssertEqual(y[3], 120.0)
+        XCTAssertEqual(y[2] - y[0], 6.0, accuracy: 0.01)   // col 0 separated
+    }
+}
+
 final class WaveFieldTests: XCTestCase {
 
     private let field = WaveField()

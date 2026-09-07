@@ -57,6 +57,7 @@ final class WavePhysics: ObservableObject {
     private var fieldBuf:    [CGPoint] = []
     private var smoothedBuf: [CGPoint] = []
     private var allSmoothed: [CGPoint] = []
+    private var yBuf:        [Double]  = []
 
     // Beat ripples — one expanding ring per beat, superposed. Geometry from the
     // screen centre is static per grid, so it is precomputed in prepare().
@@ -102,6 +103,7 @@ final class WavePhysics: ObservableObject {
         fieldBuf    = [CGPoint](repeating: .zero, count: c)
         smoothedBuf = [CGPoint](repeating: .zero, count: c)
         allSmoothed = [CGPoint](repeating: .zero, count: r * c)
+        yBuf        = [Double](repeating: 0, count: r * c)
 
         let cx = size.width / 2, cy = size.height / 2
         rippleDist = [Double](repeating: 0, count: r * c)
@@ -258,24 +260,12 @@ final class WavePhysics: ObservableObject {
             for k in 0..<nc { allSmoothed[base + k] = smoothedBuf[k] }
         }
 
-        // Phase 2: enforce row ordering — no row may cross its neighbour
-        let gap = 0.5
-        // Top-down: each row's y must be >= previous row's y
-        for row in 1..<rows {
-            let prev = (row - 1) * nc
-            let curr = row * nc
-            for k in 0..<nc {
-                allSmoothed[curr + k].y = max(allSmoothed[curr + k].y, allSmoothed[prev + k].y + gap)
-            }
-        }
-        // Bottom-up: each row's y must be <= next row's y
-        for row in stride(from: rows - 2, through: 0, by: -1) {
-            let next = (row + 1) * nc
-            let curr = row * nc
-            for k in 0..<nc {
-                allSmoothed[curr + k].y = min(allSmoothed[curr + k].y, allSmoothed[next + k].y - gap)
-            }
-        }
+        // Phase 2: soft collision — a rising line pushes its neighbours apart
+        // instead of gluing to them; the push cascades up the stack.
+        for i in 0..<(rows * nc) { yBuf[i] = allSmoothed[i].y }
+        WaveCollision.resolve(&yBuf, rows: rows, cols: nc,
+                              restGap: WaveTuning.shared.restGap, hardGap: 1.5)
+        for i in 0..<(rows * nc) { allSmoothed[i].y = yBuf[i] }
 
         // Phase 3: draw — transparency layer prevents alpha accumulation where lines converge
         ctx.withCGContext { cg in

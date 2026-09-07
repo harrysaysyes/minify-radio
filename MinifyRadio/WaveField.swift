@@ -59,6 +59,44 @@ struct WaveField {
     }
 }
 
+/// Soft collision between stacked lines. When neighbours get closer than
+/// `restGap` the intrusion is shared — the upper line is pushed up, the lower
+/// down — and relaxation iterations let a strong crest lift the rows above it
+/// in a cascade instead of gluing to them. A final hard pass guarantees rows
+/// never cross.
+enum WaveCollision {
+
+    static func resolve(_ y: inout [Double], rows: Int, cols: Int,
+                        restGap: Double, hardGap: Double, iterations: Int = 3) {
+        guard rows > 1 else { return }
+
+        for _ in 0 ..< iterations {
+            for row in 1 ..< rows {
+                let prev = (row - 1) * cols
+                let curr = row * cols
+                for k in 0 ..< cols {
+                    let overlap = restGap - (y[curr + k] - y[prev + k])
+                    if overlap > 0 {
+                        y[prev + k] -= overlap * 0.5
+                        y[curr + k] += overlap * 0.5
+                    }
+                }
+            }
+        }
+
+        for row in 1 ..< rows {
+            let prev = (row - 1) * cols
+            let curr = row * cols
+            for k in 0 ..< cols { y[curr + k] = max(y[curr + k], y[prev + k] + hardGap) }
+        }
+        for row in stride(from: rows - 2, through: 0, by: -1) {
+            let next = (row + 1) * cols
+            let curr = row * cols
+            for k in 0 ..< cols { y[curr + k] = min(y[curr + k], y[next + k] - hardGap) }
+        }
+    }
+}
+
 /// A beat ripple: an expanding ring, like a drop hitting water. Each beat spawns
 /// its own ring with its own birth time; rings coexist and superpose, so fast
 /// music gets one visible reaction per hit instead of one smeared excursion.

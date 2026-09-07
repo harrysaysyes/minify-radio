@@ -18,6 +18,7 @@ final class WaveTuning: ObservableObject {
     @Published var gerstnerAmp   = 7.0
     @Published var warp          = 0.35
     @Published var shimmer       = 0.12
+    @Published var restGap       = 6.0
 
     // Beat ripples
     @Published var beatBase      = 10.0
@@ -50,6 +51,7 @@ struct TuningPanel: View {
                         row("gerstnerAmp", $tuning.gerstnerAmp,   0...20, decimals: 1)
                         row("warp",        $tuning.warp,          0...1)
                         row("shimmer",     $tuning.shimmer,       0...0.6)
+                        row("restGap",     $tuning.restGap,       1...16, decimals: 1)
                     case .beat:
                         row("beatBase",    $tuning.beatBase,    0...30,      decimals: 1)
                         row("beatScale",   $tuning.beatScale,   0...40,      decimals: 1)
