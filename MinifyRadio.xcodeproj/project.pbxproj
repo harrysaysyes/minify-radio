@@ -15,6 +15,9 @@
 		BFIL0000000000000000006 /* SimplexNoise.swift in Sources */ = {isa = PBXBuildFile; fileRef = FREF0000000000000000006 /* SimplexNoise.swift */; };
 		BFIL0000000000000000009 /* CarPlaySceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FREF000000000000000000C /* CarPlaySceneDelegate.swift */; };
 		BFIL000000000000000000A /* WaveArt.swift in Sources */ = {isa = PBXBuildFile; fileRef = FREF000000000000000000E /* WaveArt.swift */; };
+		BFIL000000000000000000B /* IcyParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = FREF000000000000000000F /* IcyParser.swift */; };
+		BFIL000000000000000000C /* IcyParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FREF0000000000000000010 /* IcyParserTests.swift */; };
+		BFIL000000000000000000D /* IcyParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = FREF000000000000000000F /* IcyParser.swift */; };
 		BFIL0000000000000000007 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FREF0000000000000000007 /* Assets.xcassets */; };
 		BFIL0000000000000000008 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = FREF000000000000000000A /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
@@ -34,10 +37,20 @@
 		FREF000000000000000000C /* CarPlaySceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CarPlaySceneDelegate.swift; sourceTree = "<group>"; };
 		FREF000000000000000000D /* MinifyRadio.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = MinifyRadio.entitlements; sourceTree = "<group>"; };
 		FREF000000000000000000E /* WaveArt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveArt.swift; sourceTree = "<group>"; };
+		FREF000000000000000000F /* IcyParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IcyParser.swift; sourceTree = "<group>"; };
+		FREF0000000000000000010 /* IcyParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IcyParserTests.swift; sourceTree = "<group>"; };
+		FREF0000000000000000011 /* MinifyRadioTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MinifyRadioTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		FWRK0000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FWRK0000000000000000002 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -51,8 +64,17 @@
 			isa = PBXGroup;
 			children = (
 				GRPA0000000000000000002 /* MinifyRadio */,
+				GRPA0000000000000000004 /* MinifyRadioTests */,
 				GRPA0000000000000000003 /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		GRPA0000000000000000004 /* MinifyRadioTests */ = {
+			isa = PBXGroup;
+			children = (
+				FREF0000000000000000010 /* IcyParserTests.swift */,
+			);
+			path = MinifyRadioTests;
 			sourceTree = "<group>";
 		};
 		GRPA0000000000000000002 /* MinifyRadio */ = {
@@ -66,6 +88,7 @@
 				FREF0000000000000000006 /* SimplexNoise.swift */,
 				FREF000000000000000000C /* CarPlaySceneDelegate.swift */,
 				FREF000000000000000000E /* WaveArt.swift */,
+				FREF000000000000000000F /* IcyParser.swift */,
 				FREF000000000000000000D /* MinifyRadio.entitlements */,
 				FREF0000000000000000007 /* Assets.xcassets */,
 				FREF0000000000000000009 /* Info.plist */,
@@ -79,6 +102,7 @@
 			isa = PBXGroup;
 			children = (
 				FREF0000000000000000008 /* MinifyRadio.app */,
+				FREF0000000000000000011 /* MinifyRadioTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -102,6 +126,22 @@
 			productName = MinifyRadio;
 			productReference = FREF0000000000000000008 /* MinifyRadio.app */;
 			productType = "com.apple.product-type.application";
+		};
+		TARG0000000000000000002 /* MinifyRadioTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CLST0000000000000000003 /* Build configuration list for PBXNativeTarget "MinifyRadioTests" */;
+			buildPhases = (
+				SRCS0000000000000000002 /* Sources */,
+				FWRK0000000000000000002 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MinifyRadioTests;
+			productName = MinifyRadioTests;
+			productReference = FREF0000000000000000011 /* MinifyRadioTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -127,6 +167,7 @@
 			projectRoot = "";
 			targets = (
 				TARG0000000000000000001 /* MinifyRadio */,
+				TARG0000000000000000002 /* MinifyRadioTests */,
 			);
 		};
 /* End PBXProject section */
@@ -156,6 +197,16 @@
 				BFIL0000000000000000006 /* SimplexNoise.swift in Sources */,
 				BFIL0000000000000000009 /* CarPlaySceneDelegate.swift in Sources */,
 				BFIL000000000000000000A /* WaveArt.swift in Sources */,
+				BFIL000000000000000000B /* IcyParser.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		SRCS0000000000000000002 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BFIL000000000000000000C /* IcyParserTests.swift in Sources */,
+				BFIL000000000000000000D /* IcyParser.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -296,6 +347,38 @@
 			};
 			name = Release;
 		};
+		CONF0000000000000000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = RYRWMY3666;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.minify.radio.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		CONF0000000000000000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = RYRWMY3666;
+				GENERATE_INFOPLIST_FILE = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = app.minify.radio.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -313,6 +396,15 @@
 			buildConfigurations = (
 				CONF0000000000000000003 /* Debug */,
 				CONF0000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		CLST0000000000000000003 /* Build configuration list for PBXNativeTarget "MinifyRadioTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CONF0000000000000000005 /* Debug */,
+				CONF0000000000000000006 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

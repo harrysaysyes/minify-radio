@@ -154,21 +154,31 @@ class RadioEngine: NSObject, ObservableObject {
     var onEnergyUpdate: ((_ bass: Double, _ treble: Double) -> Void)?
 
     // MARK: - Streaming engine
+    //
+    // Single pipeline: one connection feeds AudioFileStream → AudioConverter → PCM,
+    // which is both played (AVAudioEngine) and metered (a tap on the output mixer).
+    // Energy is measured on the audio actually leaving the mixer, so it is in sync
+    // with the speaker by construction — no guessed delay.
 
-    private var player:          AVPlayer?          // Job 1: playback
-    private var audioFileStream: AudioFileStreamID? // Job 2: metering
+    private let audioEngine = AVAudioEngine()
+    private var playerNode:      AVAudioPlayerNode?
+    private var audioFileStream: AudioFileStreamID?
     private var audioConverter:  AudioConverterRef?
     private var pcmFormat:       AVAudioFormat?
     private var streamTask:      URLSessionDataTask?
+    private var icyParser:       IcyParser?
+
+    private var scheduledFrames: AVAudioFramePosition = 0
+    private var nodeStarted     = false
+    private var retryWorkItem:   DispatchWorkItem?
+
+    /// Audio queued before playback starts — enough to ride out network jitter.
+    private let prebufferSeconds = 0.75
 
     // Track artwork: looked up per ICY title, wave art until it arrives
     private var trackArtwork:  MPMediaItemArtwork?
     private var artworkTask:   Task<Void, Never>?
     private var artworkCache = [String: MPMediaItemArtwork]()
-
-    private var icyMetaInt:      Int = 0
-    private var icyBytesRead:    Int = 0
-    private var icyMetaRemaining: Int = 0  // metadata bytes still to skip into next chunk
 
     /// Serial queue that owns all decode state. stop() uses sync to drain it before teardown,
     /// guaranteeing no in-flight decode work can race with audioFileStream/audioConverter teardown.
@@ -187,13 +197,7 @@ class RadioEngine: NSObject, ObservableObject {
     private var tapBass:        Double = 0
     private var tapTreble:      Double = 0
 
-    // Ring buffer: delays energy to align with AVPlayer's playback buffer (~2 s)
-    private let delayFrames = 120
-    private var bassRing:   [Double] = []
-    private var trebleRing: [Double] = []
-    private var ringHead:   Int = 0
-
-    // FFT state — allocated once, reused each decode callback
+    // FFT state — allocated once, reused each tap callback
     private var fftSetup:      FFTSetup?
     private var fftLog2n:      vDSP_Length = 0
     private var fftN:          Int = 0
@@ -212,6 +216,7 @@ class RadioEngine: NSObject, ObservableObject {
         super.init()
         setupAudioSession()
         setupRemoteCommands()
+        setupInterruptionHandling()
     }
 
     // MARK: - Play / Stop
@@ -222,22 +227,21 @@ class RadioEngine: NSObject, ObservableObject {
     }
 
     func stop() {
-        // Cancel metering stream first
+        retryWorkItem?.cancel()
+        retryWorkItem = nil
         streamTask?.cancel()
         streamTask = nil
 
-        // Block until any in-progress decode work finishes, then tear down decode state.
-        // This prevents the race where the URLSession bg thread is mid-parse while
-        // the main thread disposes audioFileStream/audioConverter underneath it.
+        // Block until any in-progress decode work finishes, then tear down decode and
+        // playback state. This prevents the race where the URLSession bg thread is
+        // mid-parse while the main thread disposes the stream/converter underneath it.
         decodeQueue.sync {
             if let s = audioFileStream { AudioFileStreamClose(s); audioFileStream = nil }
             if let c = audioConverter  { AudioConverterDispose(c); audioConverter  = nil }
-            pcmFormat = nil; icyMetaInt = 0; icyBytesRead = 0; icyMetaRemaining = 0
+            pcmFormat = nil
+            icyParser = nil
+            teardownPlayback()
         }
-
-        // Stop playback
-        player?.pause()
-        player = nil
 
         artworkTask?.cancel()
         artworkTask  = nil
@@ -291,10 +295,6 @@ class RadioEngine: NSObject, ObservableObject {
         guard let url = URL(string: station.url) else { return }
         try? AVAudioSession.sharedInstance().setActive(true)
 
-        // Job 1: Playback — AVPlayer handles Icecast, buffering, reconnection
-        player = AVPlayer(playerItem: AVPlayerItem(url: url))
-        player?.play()
-
         currentStation   = station
         isPlaying        = true
         nowPlayingTitle  = "Connecting…"
@@ -302,11 +302,10 @@ class RadioEngine: NSObject, ObservableObject {
         updateNowPlaying()
         startEnergyTimer()
 
-        // Job 2: Metering — silent second connection for RMS + ICY metadata
-        startMeteringStream(url: url, station: station)
+        openStream(url: url)
     }
 
-    private func startMeteringStream(url: URL, station: Station) {
+    private func openStream(url: URL) {
         // Open AudioFileStream (format detection fires _afsPropertyListener → setupConverter)
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
         var sid: AudioFileStreamID?
@@ -322,9 +321,66 @@ class RadioEngine: NSObject, ObservableObject {
         streamTask?.resume()
     }
 
-    // MARK: - Converter setup (called by _afsPropertyListener on background URLSession thread)
+    // MARK: - Reconnection (live streams shouldn't end)
 
-    /// Called when stream format is known — sets up the converter for MP3→PCM decoding (metering only).
+    private func scheduleReconnect() {
+        guard isPlaying, currentStation != nil else { return }
+        nowPlayingTitle  = "Reconnecting…"
+        nowPlayingArtist = currentStation?.tagline ?? ""
+        updateNowPlaying()
+        let work = DispatchWorkItem { [weak self] in self?.reconnect() }
+        retryWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: work)
+    }
+
+    private func reconnect() {
+        guard isPlaying, let station = currentStation, let url = URL(string: station.url) else { return }
+        decodeQueue.sync {
+            if let s = audioFileStream { AudioFileStreamClose(s); audioFileStream = nil }
+            if let c = audioConverter  { AudioConverterDispose(c); audioConverter  = nil }
+            pcmFormat = nil
+            icyParser = nil
+        }
+        openStream(url: url)
+    }
+
+    // MARK: - Playback graph (all engine mutation happens on decodeQueue)
+
+    private func configurePlayback(format: AVAudioFormat) {
+        if let old = playerNode {
+            old.stop()
+            audioEngine.detach(old)
+        }
+        let node = AVAudioPlayerNode()
+        audioEngine.attach(node)
+        audioEngine.connect(node, to: audioEngine.mainMixerNode, format: format)
+
+        audioEngine.mainMixerNode.removeTap(onBus: 0)
+        audioEngine.mainMixerNode.installTap(onBus: 0, bufferSize: 2048, format: nil) {
+            [weak self] buffer, _ in
+            self?.measureEnergy(buffer)
+        }
+        try? audioEngine.start()
+        playerNode      = node
+        nodeStarted     = false
+        scheduledFrames = 0
+    }
+
+    private func teardownPlayback() {
+        if let node = playerNode {
+            node.stop()
+            audioEngine.detach(node)
+            playerNode = nil
+        }
+        audioEngine.mainMixerNode.removeTap(onBus: 0)
+        audioEngine.stop()
+        nodeStarted     = false
+        scheduledFrames = 0
+    }
+
+    // MARK: - Converter setup (called by _afsPropertyListener during parse on decodeQueue)
+
+    /// Called when stream format is known — sets up MP3/AAC→PCM decoding and the playback graph.
     fileprivate func setupConverter(inputFormat: AudioStreamBasicDescription) {
         guard audioConverter == nil else { return }
 
@@ -332,7 +388,7 @@ class RadioEngine: NSObject, ObservableObject {
         let ch     = max(1, UInt32(inputFormat.mChannelsPerFrame))
         let sr     = inputFormat.mSampleRate > 0 ? inputFormat.mSampleRate : 44100.0
 
-        // Non-interleaved float32 output — required by AVAudioPCMBuffer for RMS measurement.
+        // Non-interleaved float32 output — what AVAudioPlayerNode and the FFT both want.
         guard let stdFmt = AVAudioFormat(standardFormatWithSampleRate: sr,
                                          channels: AVAudioChannelCount(ch)) else { return }
         var outFmt = stdFmt.streamDescription.pointee
@@ -341,9 +397,11 @@ class RadioEngine: NSObject, ObservableObject {
         guard AudioConverterNew(&inFmt, &outFmt, &conv) == noErr, let c = conv else { return }
         audioConverter = c
         pcmFormat = stdFmt
+        configurePlayback(format: stdFmt)
 
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.nowPlayingTitle == "Connecting…" else { return }
+            guard let self, self.nowPlayingTitle == "Connecting…" || self.nowPlayingTitle == "Reconnecting…"
+            else { return }
             self.nowPlayingTitle  = "Live"
             self.nowPlayingArtist = self.currentStation?.tagline ?? ""
             self.updateNowPlaying()
@@ -375,11 +433,24 @@ class RadioEngine: NSObject, ObservableObject {
                                                        &ioFrames, buffer.mutableAudioBufferList, nil)
         if (status == noErr || status == -1) && ioFrames > 0 {
             buffer.frameLength = ioFrames
-            // FFT band energy from decoded PCM
-            guard let chData = buffer.floatChannelData else { return }
-            let frames     = Int(buffer.frameLength)
-            let sampleRate = buffer.format.sampleRate
-            let chCount    = Int(buffer.format.channelCount)
+            playerNode?.scheduleBuffer(buffer, completionHandler: nil)
+            scheduledFrames += AVAudioFramePosition(ioFrames)
+            if !nodeStarted, let node = playerNode,
+               Double(scheduledFrames) >= prebufferSeconds * fmt.sampleRate {
+                node.play()
+                nodeStarted = true
+            }
+        }
+    }
+
+    // MARK: - Energy metering (tap on the output mixer — synced to the speaker)
+
+    private func measureEnergy(_ buffer: AVAudioPCMBuffer) {
+        guard let chData = buffer.floatChannelData else { return }
+        let frames     = Int(buffer.frameLength)
+        let sampleRate = buffer.format.sampleRate
+        let chCount    = Int(buffer.format.channelCount)
+        guard frames > 0, sampleRate > 0, chCount > 0 else { return }
 
             // Mix to mono
             var mono = [Float](repeating: 0, count: frames)
@@ -445,93 +516,32 @@ class RadioEngine: NSObject, ObservableObject {
             let tCount = Float(max(1, trebHi - trebLo + 1))
             tapBass   = tanh(Double(sqrt(bSum / bCount) * norm) * 8.0)
             tapTreble = tanh(Double(sqrt(tSum / tCount) * norm) * 8.0)
-        }
     }
 
-    // MARK: - ICY stream parsing
+    // MARK: - Stream bytes → decoder (runs on decodeQueue)
 
     private func processStreamBytes(_ data: Data) {
-        guard let stream = audioFileStream else { return }
-
-        func feedToStream(_ chunk: Data) {
-            chunk.withUnsafeBytes { ptr in
-                guard let base = ptr.baseAddress else { return }
-                AudioFileStreamParseBytes(stream, UInt32(chunk.count), base, [])
-            }
-        }
-
-        guard icyMetaInt > 0 else { feedToStream(data); return }
-
-        let bytes  = [UInt8](data)
-        var offset = 0
-
-        // A metadata block from the previous chunk may still need skipping.
-        // If we don't track this, the metadata bytes are treated as audio → noise.
-        if icyMetaRemaining > 0 {
-            let skip = min(icyMetaRemaining, bytes.count)
-            icyMetaRemaining -= skip
-            offset += skip
-            if offset >= bytes.count { return }
-        }
-
-        while offset < bytes.count {
-            let remaining = icyMetaInt - icyBytesRead
-            let available = bytes.count - offset
-
-            if available < remaining {
-                feedToStream(Data(bytes[offset...]))
-                icyBytesRead += available
-                break
-            }
-
-            // Complete one audio block
-            feedToStream(Data(bytes[offset..<offset + remaining]))
-            offset += remaining
-            icyBytesRead = 0
-
-            // Read 1-byte metadata length indicator
-            guard offset < bytes.count else { break }
-            let metaLen = Int(bytes[offset]) * 16
-            offset += 1
-
-            if metaLen > 0 {
-                let metaAvail = bytes.count - offset
-                if metaAvail >= metaLen {
-                    // Whole metadata block is in this chunk — parse it
-                    parseIcyMetadata(Data(bytes[offset..<offset + metaLen]))
-                    offset += metaLen
-                } else {
-                    // Metadata block spans into the next chunk.
-                    // Track how many bytes to skip on arrival; we lose this title update
-                    // but that's far better than feeding metadata bytes to the audio decoder.
-                    icyMetaRemaining = metaLen - metaAvail
-                    break  // consumed all remaining bytes in this chunk
-                }
-            }
+        let audio = icyParser?.consume(data) { [weak self] title in
+            DispatchQueue.main.async { self?.applyStreamTitle(title) }
+        } ?? data
+        guard let stream = audioFileStream, !audio.isEmpty else { return }
+        audio.withUnsafeBytes { ptr in
+            guard let base = ptr.baseAddress else { return }
+            AudioFileStreamParseBytes(stream, UInt32(audio.count), base, [])
         }
     }
 
-    private func parseIcyMetadata(_ data: Data) {
-        let raw = data.filter { $0 != 0 }
-        guard let str = String(bytes: raw, encoding: .utf8) else { return }
-        guard let s1 = str.range(of: "StreamTitle='"),
-              let s2 = str.range(of: "'", range: s1.upperBound..<str.endIndex) else { return }
-        let title = String(str[s1.upperBound..<s2.lowerBound])
-            .trimmingCharacters(in: .whitespaces)
-        guard !title.isEmpty else { return }
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            let parts = title.components(separatedBy: " - ")
-            if parts.count >= 2 {
-                self.nowPlayingTitle  = parts[1...].joined(separator: " - ").trimmingCharacters(in: .whitespaces)
-                self.nowPlayingArtist = parts[0].trimmingCharacters(in: .whitespaces)
-            } else {
-                self.nowPlayingTitle  = title
-                self.nowPlayingArtist = ""
-            }
-            self.fetchTrackArtwork(query: title)
-            self.updateNowPlaying()
+    private func applyStreamTitle(_ title: String) {
+        let parts = title.components(separatedBy: " - ")
+        if parts.count >= 2 {
+            nowPlayingTitle  = parts[1...].joined(separator: " - ").trimmingCharacters(in: .whitespaces)
+            nowPlayingArtist = parts[0].trimmingCharacters(in: .whitespaces)
+        } else {
+            nowPlayingTitle  = title
+            nowPlayingArtist = ""
         }
+        fetchTrackArtwork(query: title)
+        updateNowPlaying()
     }
 
     // MARK: - Track artwork (iTunes Search — no key, no account)
@@ -576,6 +586,26 @@ class RadioEngine: NSObject, ObservableObject {
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
     }
 
+    private func setupInterruptionHandling() {
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: nil, queue: .main
+        ) { [weak self] note in
+            guard let self,
+                  let raw  = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  let type = AVAudioSession.InterruptionType(rawValue: raw),
+                  type == .ended, self.isPlaying,
+                  let optRaw = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt,
+                  AVAudioSession.InterruptionOptions(rawValue: optRaw).contains(.shouldResume)
+            else { return }
+            try? AVAudioSession.sharedInstance().setActive(true)
+            self.decodeQueue.async {
+                try? self.audioEngine.start()
+                if self.nodeStarted { self.playerNode?.play() }
+            }
+        }
+    }
+
     // MARK: - Energy timer
 
     private func startEnergyTimer() {
@@ -585,9 +615,6 @@ class RadioEngine: NSObject, ObservableObject {
         trebleSmoothed = 0
         tapBass        = 0
         tapTreble      = 0
-        bassRing       = [Double](repeating: 0, count: delayFrames)
-        trebleRing     = [Double](repeating: 0, count: delayFrames)
-        ringHead       = 0
 
         energyTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             guard let self else { return }
@@ -611,12 +638,7 @@ class RadioEngine: NSObject, ObservableObject {
                 self.trebleSmoothed += ((b * 0.50 + c * 0.30 + a * 0.20) * 0.2 - self.trebleSmoothed) * 0.02
             }
 
-            // Write to ring, read from delayed tail
-            self.bassRing[self.ringHead]   = self.bassSmoothed
-            self.trebleRing[self.ringHead] = self.trebleSmoothed
-            let tail = (self.ringHead + 1) % self.delayFrames
-            self.onEnergyUpdate?(self.bassRing[tail], self.trebleRing[tail])
-            self.ringHead = tail
+            self.onEnergyUpdate?(self.bassSmoothed, self.trebleSmoothed)
         }
     }
 
@@ -727,9 +749,9 @@ extension RadioEngine: URLSessionDataDelegate {
                     guard let key = k as? String else { return nil }
                     return (key.lowercased(), v)
                 })
-            if let val = headers["icy-metaint"] as? String {
-                let parsed = Int(val) ?? 0
-                decodeQueue.async { [weak self] in self?.icyMetaInt = parsed }
+            let parsed = (headers["icy-metaint"] as? String).flatMap(Int.init) ?? 0
+            decodeQueue.async { [weak self] in
+                self?.icyParser = parsed > 0 ? IcyParser(metaInt: parsed) : nil
             }
         }
         completionHandler(.allow)
@@ -750,7 +772,10 @@ extension RadioEngine: URLSessionDataDelegate {
     func urlSession(_ session: URLSession,
                     task: URLSessionTask,
                     didCompleteWithError error: Error?) {
-        // This is the metering stream — playback continues via AVPlayer unaffected.
-        // On error, organic sine waves kick in automatically (tapRMS stays < 0.01).
+        guard task === streamTask else { return }
+        if let err = error as NSError?, err.code == NSURLErrorCancelled { return }
+        // The one connection died — live radio shouldn't end, so keep trying
+        // while the user still expects playback.
+        DispatchQueue.main.async { [weak self] in self?.scheduleReconnect() }
     }
 }
