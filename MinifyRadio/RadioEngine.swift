@@ -192,7 +192,6 @@ class RadioEngine: NSObject, ObservableObject {
     // MARK: - Energy
 
     private var energyTimer:    Timer?
-    private var energyPhase:    Double = 0
     private var bassSmoothed:   Double = 0
     private var midSmoothed:    Double = 0
     private var trebleSmoothed: Double = 0
@@ -657,7 +656,6 @@ class RadioEngine: NSObject, ObservableObject {
 
     private func startEnergyTimer() {
         stopEnergyTimer()
-        energyPhase    = 0
         bassSmoothed   = 0
         midSmoothed    = 0
         trebleSmoothed = 0
@@ -679,27 +677,9 @@ class RadioEngine: NSObject, ObservableObject {
         energyTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
             guard let self else { return }
             let dt = 1.0 / 60.0
-            self.energyPhase += dt
-            let t = self.energyPhase
-
-            if self.tapBass > 0.001 || self.tapMid > 0.001 || self.tapTreble > 0.001 {
-                self.bassSmoothed   = self.bassEnv.process(self.tapBass,     dt: dt)
-                self.midSmoothed    = self.midEnv.process(self.tapMid,       dt: dt)
-                self.trebleSmoothed = self.trebleEnv.process(self.tapTreble, dt: dt)
-            } else {
-                // Idle drift — bands phase-shifted so they move independently
-                let a = 0.5 + 0.5 * sin(t * 0.31)
-                let b = 0.5 + 0.5 * sin(t * 0.71 + 2.1)
-                let c = 0.5 + 0.5 * sin(t * 1.33 + 0.8)
-                self.bassSmoothed   += ((a * 0.50 + b * 0.30 + c * 0.20) * 0.4 - self.bassSmoothed)   * 0.02
-                self.midSmoothed    += ((c * 0.50 + a * 0.30 + b * 0.20) * 0.3 - self.midSmoothed)    * 0.02
-                self.trebleSmoothed += ((b * 0.50 + c * 0.30 + a * 0.20) * 0.2 - self.trebleSmoothed) * 0.02
-                // Keep envelopes in step so returning audio doesn't jump
-                self.bassEnv.reset(to: self.bassSmoothed)
-                self.midEnv.reset(to: self.midSmoothed)
-                self.trebleEnv.reset(to: self.trebleSmoothed)
-            }
-
+            self.bassSmoothed   = self.bassEnv.process(self.tapBass,     dt: dt)
+            self.midSmoothed    = self.midEnv.process(self.tapMid,       dt: dt)
+            self.trebleSmoothed = self.trebleEnv.process(self.tapTreble, dt: dt)
             self.onEnergyUpdate?(self.bassSmoothed, self.midSmoothed, self.trebleSmoothed)
         }
     }

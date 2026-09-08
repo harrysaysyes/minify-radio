@@ -81,7 +81,10 @@ final class WavePhysics: ObservableObject {
     var midEnergy:    Double = 0
     var trebleEnergy: Double = 0
 
-    private var smoothedAmpY:    Double = WaveCfg.waveAmpY
+    /// Whether audio is playing. When false, amplitude eases to zero — still water.
+    var audioActive = false
+
+    private var smoothedAmpY:    Double = 0
     private var smoothedShimmer: Double = 0
 
     // MARK: Grid init
@@ -196,9 +199,11 @@ final class WavePhysics: ObservableObject {
         ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(bgColor))
         guard !points.isEmpty else { return }
 
-        // Bass → wave height
+        // Bass → wave height; flat when nothing is playing
         let bassResponse = pow(max(0, bassEnergy), 1.5)
-        let effAmpY      = WaveCfg.waveAmpY * (1.0 + bassResponse * WaveCfg.audioAmpMultiplier)
+        let effAmpY      = audioActive
+            ? WaveCfg.waveAmpY * (1.0 + bassResponse * WaveCfg.audioAmpMultiplier)
+            : 0.0
         smoothedAmpY    += (effAmpY - smoothedAmpY) * 0.12
 
         // Treble → fine shimmer octave

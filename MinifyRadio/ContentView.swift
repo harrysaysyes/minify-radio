@@ -137,6 +137,10 @@ struct ContentView: View {
             engine.onBeat = { [weak physics] intensity in
                 physics?.triggerBeatPulse(intensity: intensity)
             }
+            physics.audioActive = engine.isPlaying
+        }
+        .onChange(of: engine.isPlaying) { playing in
+            physics.audioActive = playing
         }
         .sheet(isPresented: $showSupport) {
             SupportSheet(iap: iap)
