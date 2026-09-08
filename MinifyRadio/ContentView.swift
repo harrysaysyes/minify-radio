@@ -16,6 +16,25 @@ extension Color {
     }
 }
 
+// MARK: - Track opener
+
+/// Opens a track — Spotify search if Spotify is installed, else the exact
+/// Apple Music page when known, else Apple Music search.
+enum TrackOpener {
+    static func open(query: String, exactLink: URL? = nil) {
+        let trimmed = query.trimmingCharacters(in: .whitespaces)
+        let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? trimmed
+        if let spotify = URL(string: "spotify:search:\(encoded)"),
+           UIApplication.shared.canOpenURL(spotify) {
+            UIApplication.shared.open(spotify)
+        } else if let exactLink {
+            UIApplication.shared.open(exactLink)
+        } else if let search = URL(string: "https://music.apple.com/search?term=\(encoded)") {
+            UIApplication.shared.open(search)
+        }
+    }
+}
+
 // MARK: - Slot edit wrapper (Identifiable for .sheet(item:))
 
 private struct SlotEdit: Identifiable { let id: Int }
@@ -166,15 +185,8 @@ struct ContentView: View {
     /// Opens the identified track — Spotify if installed, else its Apple Music page.
     private func openTrack() {
         guard let link = engine.trackLink else { return }
-        let query   = "\(engine.nowPlayingArtist) \(engine.nowPlayingTitle)"
-            .trimmingCharacters(in: .whitespaces)
-        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
-        if let spotify = URL(string: "spotify:search:\(encoded)"),
-           UIApplication.shared.canOpenURL(spotify) {
-            UIApplication.shared.open(spotify)
-        } else {
-            UIApplication.shared.open(link)
-        }
+        TrackOpener.open(query: "\(engine.nowPlayingArtist) \(engine.nowPlayingTitle)",
+                         exactLink: link)
     }
 
     private var cardBackground: some View {
@@ -434,6 +446,8 @@ private struct HistorySheet: View {
                                 }
                                 .padding(.vertical, 10)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                                .onTapGesture { TrackOpener.open(query: entry.title) }
                             }
                         }
                         .padding(.horizontal, 24)
