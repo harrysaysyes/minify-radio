@@ -2,6 +2,7 @@ import AVFoundation
 import MediaPlayer
 import AudioToolbox
 import Accelerate
+import ShazamKit
 import UIKit
 
 // MARK: - Station model
@@ -183,6 +184,11 @@ class RadioEngine: NSObject, ObservableObject {
     private var artworkTask:   Task<Void, Never>?
     private var artworkCache = [String: (art: MPMediaItemArtwork, link: URL?)]()
 
+    // Shazam fallback for stations that never send ICY titles
+    private let shazam = ShazamMatcher()
+    private var icyTitleSeen = false
+    private var shazamTimer: Timer?
+
     /// Serial queue that owns all decode state. stop() uses sync to drain it before teardown,
     /// guaranteeing no in-flight decode work can race with audioFileStream/audioConverter teardown.
     private let decodeQueue = DispatchQueue(label: "radio.decode", qos: .userInitiated)
@@ -239,6 +245,7 @@ class RadioEngine: NSObject, ObservableObject {
         setupAudioSession()
         setupRemoteCommands()
         setupInterruptionHandling()
+        shazam.onMatch = { [weak self] item in self?.applyShazamMatch(item) }
     }
 
     // MARK: - Play / Stop
@@ -269,6 +276,11 @@ class RadioEngine: NSObject, ObservableObject {
         artworkTask  = nil
         trackArtwork = nil
         trackLink    = nil
+
+        shazamTimer?.invalidate()
+        shazamTimer  = nil
+        shazam.cancel()
+        icyTitleSeen = false
 
         stopEnergyTimer()
         isPlaying        = false
@@ -325,8 +337,50 @@ class RadioEngine: NSObject, ObservableObject {
         beatLead         = Double(AVAudioSession.sharedInstance().outputLatency) + 0.08
         updateNowPlaying()
         startEnergyTimer()
+        startShazamFallback()
 
         openStream(url: url)
+    }
+
+    // MARK: - Shazam fallback (stations that never send titles)
+
+    private func startShazamFallback() {
+        icyTitleSeen = false
+        shazamTimer?.invalidate()
+        // First check shortly after connect, then a steady cadence — dedup in the
+        // history means repeat matches of the same track are free.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in
+            self?.attemptShazamIfNeeded()
+        }
+        shazamTimer = Timer.scheduledTimer(withTimeInterval: 90, repeats: true) { [weak self] _ in
+            self?.attemptShazamIfNeeded()
+        }
+    }
+
+    private func attemptShazamIfNeeded() {
+        guard isPlaying, !icyTitleSeen else { return }
+        shazam.beginAttempt()
+    }
+
+    private func applyShazamMatch(_ item: SHMatchedMediaItem) {
+        guard isPlaying, !icyTitleSeen, let title = item.title else { return }
+        nowPlayingTitle  = title
+        nowPlayingArtist = item.artist ?? ""
+        trackLink        = item.appleMusicURL
+        logToHistory([item.artist, item.title].compactMap { $0 }.joined(separator: " - "))
+        updateNowPlaying()
+
+        if let artURL = item.artworkURL {
+            Task { [weak self] in
+                guard let (data, _) = try? await URLSession.shared.data(from: artURL),
+                      let image = UIImage(data: data) else { return }
+                await MainActor.run {
+                    guard let self, self.isPlaying, !self.icyTitleSeen else { return }
+                    self.trackArtwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+                    self.updateNowPlaying()
+                }
+            }
+        }
     }
 
     private func openStream(url: URL) {
@@ -381,8 +435,9 @@ class RadioEngine: NSObject, ObservableObject {
 
         audioEngine.mainMixerNode.removeTap(onBus: 0)
         audioEngine.mainMixerNode.installTap(onBus: 0, bufferSize: 2048, format: nil) {
-            [weak self] buffer, _ in
+            [weak self] buffer, when in
             self?.measureEnergy(buffer)
+            self?.shazam.feed(buffer, at: when)
         }
         try? audioEngine.start()
         playerNode      = node
@@ -584,6 +639,8 @@ class RadioEngine: NSObject, ObservableObject {
     }
 
     private func applyStreamTitle(_ title: String) {
+        icyTitleSeen = true   // real titles win — the shazam fallback stands down
+        shazam.cancel()
         let parts = title.components(separatedBy: " - ")
         if parts.count >= 2 {
             nowPlayingTitle  = parts[1...].joined(separator: " - ").trimmingCharacters(in: .whitespaces)
@@ -594,11 +651,14 @@ class RadioEngine: NSObject, ObservableObject {
         }
         fetchTrackArtwork(query: title)
         updateNowPlaying()
-        if let station = currentStation {
-            history.log(title: title, station: station.name)
-            if let data = try? JSONEncoder().encode(history) {
-                UserDefaults.standard.set(data, forKey: "listen_history")
-            }
+        logToHistory(title)
+    }
+
+    private func logToHistory(_ title: String) {
+        guard let station = currentStation else { return }
+        history.log(title: title, station: station.name)
+        if let data = try? JSONEncoder().encode(history) {
+            UserDefaults.standard.set(data, forKey: "listen_history")
         }
     }
 
