@@ -5,6 +5,7 @@ struct ListenEntry: Codable, Identifiable, Equatable {
     let date:    Date
     let station: String
     let title:   String
+    var link:    URL?   // exact store page, attached once the track lookup resolves
 }
 
 /// The listen history: every identified track title, newest last.
@@ -15,14 +16,26 @@ struct ListenHistory: Codable, Equatable {
 
     private(set) var entries: [ListenEntry] = []
 
-    mutating func log(title rawTitle: String, station: String, date: Date = Date()) {
+    mutating func log(title rawTitle: String, station: String,
+                      link: URL? = nil, date: Date = Date()) {
         let title = rawTitle.trimmingCharacters(in: .whitespaces)
         guard !title.isEmpty else { return }
         // ICY streams repeat the current title on reconnects — skip consecutive dupes
         if let last = entries.last, last.title == title, last.station == station { return }
-        entries.append(ListenEntry(id: UUID(), date: date, station: station, title: title))
+        entries.append(ListenEntry(id: UUID(), date: date, station: station,
+                                   title: title, link: link))
         if entries.count > ListenHistory.capacity {
             entries.removeFirst(entries.count - ListenHistory.capacity)
         }
+    }
+
+    /// Attaches the resolved store page to the latest linkless entry for this
+    /// title — lookups finish after the entry has already been logged.
+    mutating func attachLink(_ link: URL, title rawTitle: String, station: String) {
+        let title = rawTitle.trimmingCharacters(in: .whitespaces)
+        guard let index = entries.lastIndex(where: {
+            $0.title == title && $0.station == station && $0.link == nil
+        }) else { return }
+        entries[index].link = link
     }
 }

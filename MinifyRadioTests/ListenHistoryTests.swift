@@ -51,9 +51,53 @@ final class ListenHistoryTests: XCTestCase {
     func testCodableRoundtrip() throws {
         var h = ListenHistory()
         h.log(title: "Song A", station: "Reprezent")
-        h.log(title: "Song B", station: "Classic FM")
+        h.log(title: "Song B", station: "Classic FM", link: URL(string: "https://music.apple.com/x"))
         let data    = try JSONEncoder().encode(h)
         let decoded = try JSONDecoder().decode(ListenHistory.self, from: data)
         XCTAssertEqual(decoded, h)
+    }
+
+    func testDecodesLegacyEntriesWithoutLinks() throws {
+        // History persisted before links existed must still load
+        let legacy = #"{"entries":[{"id":"11111111-1111-1111-1111-111111111111","date":700000000,"station":"Reprezent","title":"Song A"}]}"#
+        let decoded = try JSONDecoder().decode(ListenHistory.self, from: Data(legacy.utf8))
+        XCTAssertEqual(decoded.entries.count, 1)
+        XCTAssertNil(decoded.entries[0].link)
+    }
+
+    func testLogStoresLinkWhenKnownUpFront() {
+        var h = ListenHistory()
+        let url = URL(string: "https://music.apple.com/track/1")
+        h.log(title: "Song A", station: "Reprezent", link: url)
+        XCTAssertEqual(h.entries.first?.link, url)
+    }
+
+    func testAttachLinkFillsTheMatchingEntry() {
+        var h = ListenHistory()
+        h.log(title: "Song A", station: "Reprezent")
+        h.log(title: "Song B", station: "Reprezent")
+        let url = URL(string: "https://music.apple.com/track/a")!
+        h.attachLink(url, title: "Song A", station: "Reprezent")
+        XCTAssertEqual(h.entries[0].link, url)
+        XCTAssertNil(h.entries[1].link)
+    }
+
+    func testAttachLinkTargetsTheLatestLinklessOccurrence() {
+        var h = ListenHistory()
+        let old = URL(string: "https://music.apple.com/old")!
+        h.log(title: "Song A", station: "Reprezent", link: old)
+        h.log(title: "Song B", station: "Reprezent")
+        h.log(title: "Song A", station: "Reprezent")          // played again, no link yet
+        let new = URL(string: "https://music.apple.com/new")!
+        h.attachLink(new, title: "Song A", station: "Reprezent")
+        XCTAssertEqual(h.entries[0].link, old)                 // earlier entry untouched
+        XCTAssertEqual(h.entries[2].link, new)
+    }
+
+    func testAttachLinkWithNoMatchDoesNothing() {
+        var h = ListenHistory()
+        h.log(title: "Song A", station: "Reprezent")
+        h.attachLink(URL(string: "https://x")!, title: "Other Song", station: "Reprezent")
+        XCTAssertNil(h.entries[0].link)
     }
 }

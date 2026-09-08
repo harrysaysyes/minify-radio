@@ -367,7 +367,8 @@ class RadioEngine: NSObject, ObservableObject {
         nowPlayingTitle  = title
         nowPlayingArtist = item.artist ?? ""
         trackLink        = item.appleMusicURL
-        logToHistory([item.artist, item.title].compactMap { $0 }.joined(separator: " - "))
+        logToHistory([item.artist, item.title].compactMap { $0 }.joined(separator: " - "),
+                     link: item.appleMusicURL)
         updateNowPlaying()
 
         if let artURL = item.artworkURL {
@@ -654,9 +655,19 @@ class RadioEngine: NSObject, ObservableObject {
         logToHistory(title)
     }
 
-    private func logToHistory(_ title: String) {
+    private func logToHistory(_ title: String, link: URL? = nil) {
         guard let station = currentStation else { return }
-        history.log(title: title, station: station.name)
+        history.log(title: title, station: station.name, link: link)
+        saveHistory()
+    }
+
+    private func attachLinkToHistory(_ link: URL, title: String) {
+        guard let station = currentStation else { return }
+        history.attachLink(link, title: title, station: station.name)
+        saveHistory()
+    }
+
+    private func saveHistory() {
         if let data = try? JSONEncoder().encode(history) {
             UserDefaults.standard.set(data, forKey: "listen_history")
         }
@@ -673,6 +684,7 @@ class RadioEngine: NSObject, ObservableObject {
         if let hit = artworkCache[query] {
             trackArtwork = hit.art
             trackLink    = hit.link
+            if let link = hit.link { attachLinkToHistory(link, title: query) }
             return
         }
 
@@ -683,6 +695,7 @@ class RadioEngine: NSObject, ObservableObject {
                 self.artworkCache[query] = found
                 self.trackArtwork = found.art
                 self.trackLink    = found.link
+                if let link = found.link { self.attachLinkToHistory(link, title: query) }
                 self.updateNowPlaying()
             }
         }

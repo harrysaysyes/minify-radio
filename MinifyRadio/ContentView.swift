@@ -447,7 +447,9 @@ private struct HistorySheet: View {
                                 .padding(.vertical, 10)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .contentShape(Rectangle())
-                                .onTapGesture { TrackOpener.open(query: entry.title) }
+                                .onTapGesture {
+                                    TrackOpener.open(query: entry.title, exactLink: entry.link)
+                                }
                             }
                         }
                         .padding(.horizontal, 24)
