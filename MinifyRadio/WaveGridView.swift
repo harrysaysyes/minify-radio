@@ -21,6 +21,13 @@ private enum WaveCfg {
     // Spring physics
     static let tension: Double         = 0.035
     static let friction: Double        = 0.88
+    // Feel — calibrated live on-device 2026-09-07
+    static let audioAmpMultiplier: Double = 0.69
+    static let flowBase: Double           = 1.5
+    static let flowMid: Double            = 1.81
+    static let beatStrengthBase: Double   = 19.4
+    static let beatStrengthScale: Double  = 20.1
+    static let restGap: Double            = 1.0
 }
 
 // MARK: - Physics state (class so Canvas closure can mutate it)
@@ -39,7 +46,7 @@ final class WavePhysics: ObservableObject {
     private(set) var rows = 0
     private(set) var cols = 0
 
-    private var field = WaveField()
+    private let field = WaveField()
 
     /// Field time — advances faster when the mids are busy, so flow follows the music.
     private var flowTime:        Double = 0
@@ -129,13 +136,7 @@ final class WavePhysics: ObservableObject {
         let rawDelta   = currentTime - lastTime
         let dtSeconds  = min(max(rawDelta, 1.0 / 120.0), 1.0 / 30.0)
         lastTime       = currentTime
-
-        let tuning = WaveTuning.shared
-        field.warp          = tuning.warp
-        field.gerstnerAmp   = tuning.gerstnerAmp
-        field.gerstnerSpeed = tuning.gerstnerSpeed
-        field.shimmerAmp    = tuning.shimmer
-        flowTime           += dtSeconds * (tuning.flowBase + midEnergy * tuning.flowMid)
+        flowTime      += dtSeconds * (WaveCfg.flowBase + midEnergy * WaveCfg.flowMid)
         ripples.removeAll { currentTime - $0.birth > 3 }
 
         let dtScale = dtSeconds * 60.0
@@ -181,8 +182,8 @@ final class WavePhysics: ObservableObject {
     func triggerBeatPulse(intensity: Double = 1.0) {
         guard !points.isEmpty, initializedSize != .zero else { return }
         // Soft beats ripple, drops slam — beats are the primary reaction
-        let tuning   = WaveTuning.shared
-        let strength = tuning.beatBase + tuning.beatScale * min(1.0, max(0.0, intensity))
+        let strength = WaveCfg.beatStrengthBase
+                     + WaveCfg.beatStrengthScale * min(1.0, max(0.0, intensity))
         ripples.append(BeatRipple(birth: lastTime, strength: strength))
         if ripples.count > 8 { ripples.removeFirst() }
     }
@@ -195,7 +196,7 @@ final class WavePhysics: ObservableObject {
 
         // Bass → wave height
         let bassResponse = pow(max(0, bassEnergy), 1.5)
-        let effAmpY      = WaveCfg.waveAmpY * (1.0 + bassResponse * WaveTuning.shared.ampMultiplier)
+        let effAmpY      = WaveCfg.waveAmpY * (1.0 + bassResponse * WaveCfg.audioAmpMultiplier)
         smoothedAmpY    += (effAmpY - smoothedAmpY) * 0.12
 
         // Treble → fine shimmer octave
@@ -235,9 +236,7 @@ final class WavePhysics: ObservableObject {
                 for ripple in ripples {
                     let amount = Ripple.displacement(dist: rippleDist[i],
                                                      age: lastTime - ripple.birth,
-                                                     strength: ripple.strength,
-                                                     speed: WaveTuning.shared.rippleSpeed,
-                                                     width: WaveTuning.shared.rippleWidth)
+                                                     strength: ripple.strength)
                     if amount != 0 {
                         rippleX += rippleNX[i] * amount
                         rippleY += rippleNY[i] * amount
@@ -264,7 +263,7 @@ final class WavePhysics: ObservableObject {
         // instead of gluing to them; the push cascades up the stack.
         for i in 0..<(rows * nc) { yBuf[i] = allSmoothed[i].y }
         WaveCollision.resolve(&yBuf, rows: rows, cols: nc,
-                              restGap: WaveTuning.shared.restGap, hardGap: 1.5)
+                              restGap: WaveCfg.restGap, hardGap: 1.5)
         for i in 0..<(rows * nc) { allSmoothed[i].y = yBuf[i] }
 
         // Phase 3: draw — transparency layer prevents alpha accumulation where lines converge

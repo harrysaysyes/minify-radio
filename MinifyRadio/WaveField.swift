@@ -17,18 +17,18 @@ struct WaveField {
     var speedY = 0.011
 
     /// Warp strength in noise-space units.
-    var warp = 0.35
+    var warp = 0.2
 
     /// Whitney drift rate: row phase advances at rowFraction × drift × time.
     var drift = 0.012
 
     /// Horizontal bunching.
-    var gerstnerAmp        = 7.0
+    var gerstnerAmp        = 5.6
     var gerstnerWavelength = 240.0
-    var gerstnerSpeed      = 0.55
+    var gerstnerSpeed      = 1.37
 
     /// Fine treble octave, as a fraction of amplitude — a sparkle, not jitter.
-    var shimmerAmp = 0.12
+    var shimmerAmp = 0.24
 
     /// Keeps the sin(gain·noise) fold of the original look.
     var angleGain = 6.0
@@ -103,10 +103,10 @@ enum WaveCollision {
 enum Ripple {
 
     /// Ring expansion speed, px/s.
-    static let speed = 520.0
+    static let speed = 411.0
 
     /// Ring front thickness, px.
-    static let width = 90.0
+    static let width = 46.0
 
     /// Displacement magnitude at `dist` from the ripple origin, `age` seconds
     /// after the beat. Zero before birth and after ~3 s of decay.
