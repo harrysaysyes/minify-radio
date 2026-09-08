@@ -12,6 +12,7 @@ final class ShazamMatcher: NSObject, SHSessionDelegate {
     private let lock = NSLock()
     private var session: SHSession?
     private var listenedSeconds = 0.0
+    private var monoBuffer: AVAudioPCMBuffer?
 
     /// How much audio one attempt may consume before giving up.
     private let listenWindow = 12.0
@@ -38,8 +39,38 @@ final class ShazamMatcher: NSObject, SHSessionDelegate {
         guard let s = session else { lock.unlock(); return }
         listenedSeconds += Double(buffer.frameLength) / buffer.format.sampleRate
         if listenedSeconds > listenWindow { session = nil }   // this attempt is over
+        let mono = downmixedToMono(buffer)
         lock.unlock()
-        s.matchStreamingBuffer(buffer, at: time)
+        s.matchStreamingBuffer(mono, at: time)
+    }
+
+    /// ShazamKit only accepts mono PCM — the output tap delivers stereo.
+    private func downmixedToMono(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer {
+        let channels = Int(buffer.format.channelCount)
+        let frames   = Int(buffer.frameLength)
+        guard channels > 1, frames > 0, let src = buffer.floatChannelData else { return buffer }
+
+        if monoBuffer == nil
+            || monoBuffer!.format.sampleRate != buffer.format.sampleRate
+            || monoBuffer!.frameCapacity < AVAudioFrameCount(frames) {
+            guard let fmt = AVAudioFormat(standardFormatWithSampleRate: buffer.format.sampleRate,
+                                          channels: 1),
+                  let fresh = AVAudioPCMBuffer(pcmFormat: fmt,
+                                               frameCapacity: max(4096, AVAudioFrameCount(frames)))
+            else { return buffer }
+            monoBuffer = fresh
+        }
+        let mono = monoBuffer!
+        mono.frameLength = AVAudioFrameCount(frames)
+        guard let dst = mono.floatChannelData?[0] else { return buffer }
+
+        let scale = 1.0 / Float(channels)
+        for i in 0 ..< frames {
+            var sum: Float = 0
+            for ch in 0 ..< channels { sum += src[ch][i] }
+            dst[i] = sum * scale
+        }
+        return mono
     }
 
     func session(_ session: SHSession, didFind match: SHMatch) {
@@ -50,5 +81,8 @@ final class ShazamMatcher: NSObject, SHSessionDelegate {
 
     func session(_ session: SHSession, didNotFindMatchFor signature: SHSignature, error: Error?) {
         // Keep listening — more audio may still match before the window closes.
+        #if DEBUG
+        if let error { print("shazam error: \(error)") }
+        #endif
     }
 }
