@@ -346,8 +346,10 @@ struct WaveGridView: View {
     @ObservedObject var physics: WavePhysics
 
     var onTap: (() -> Void)? = nil
+    var onLongPress: (() -> Void)? = nil
 
     @State private var touchStart: CGPoint? = nil
+    @State private var longPressFired = false
 
     var body: some View {
         TimelineView(.animation) { timeline in
@@ -371,12 +373,20 @@ struct WaveGridView: View {
                     }
                     .onEnded { value in
                         physics.pointerEnded()
-                        if let start = touchStart {
+                        if let start = touchStart, !longPressFired {
                             let dx = value.location.x - start.x
                             let dy = value.location.y - start.y
                             if hypot(dx, dy) <= 14 { onTap?() }
                         }
                         touchStart = nil
+                        longPressFired = false
+                    }
+            )
+            .simultaneousGesture(
+                LongPressGesture(minimumDuration: 0.6, maximumDistance: 12)
+                    .onEnded { _ in
+                        longPressFired = true
+                        onLongPress?()
                     }
             )
         }

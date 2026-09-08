@@ -150,6 +150,7 @@ class RadioEngine: NSObject, ObservableObject {
     @Published private(set) var currentStation: Station? = nil
     @Published private(set) var nowPlayingTitle  = "Select a station"
     @Published private(set) var nowPlayingArtist = ""
+    @Published private(set) var history: ListenHistory
 
     var onEnergyUpdate: ((_ bass: Double, _ mid: Double, _ treble: Double) -> Void)?
     var onBeat: ((_ intensity: Double) -> Void)?
@@ -231,6 +232,9 @@ class RadioEngine: NSObject, ObservableObject {
         let saved = UserDefaults.standard.data(forKey: "radio_stations")
             .flatMap { try? JSONDecoder().decode([Station].self, from: $0) }
         stations = (saved?.count == 3) ? saved! : RadioEngine.defaultStations
+        history = UserDefaults.standard.data(forKey: "listen_history")
+            .flatMap { try? JSONDecoder().decode(ListenHistory.self, from: $0) }
+            ?? ListenHistory()
         super.init()
         setupAudioSession()
         setupRemoteCommands()
@@ -590,6 +594,12 @@ class RadioEngine: NSObject, ObservableObject {
         }
         fetchTrackArtwork(query: title)
         updateNowPlaying()
+        if let station = currentStation {
+            history.log(title: title, station: station.name)
+            if let data = try? JSONEncoder().encode(history) {
+                UserDefaults.standard.set(data, forKey: "listen_history")
+            }
+        }
     }
 
     // MARK: - Track artwork (iTunes Search — no key, no account)

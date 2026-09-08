@@ -29,6 +29,7 @@ struct ContentView: View {
     @StateObject private var physics = WavePhysics()
 
     @State private var showSupport = false
+    @State private var showHistory = false
     @State private var slotToEdit: SlotEdit? = nil
 
     private var accent: Color {
@@ -46,7 +47,11 @@ struct ContentView: View {
                 WaveGridView(
                     accent:     accent,
                     background: waveBackground,
-                    physics:    physics
+                    physics:    physics,
+                    onLongPress: {
+                        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+                        showHistory = true
+                    }
                 )
 
                 // ── Player card ──────────────────────────────────────
@@ -150,6 +155,10 @@ struct ContentView: View {
         }
         .sheet(item: $slotToEdit) { edit in
             StationSearchSheet(slot: edit.id, engine: engine)
+                .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showHistory) {
+            HistorySheet(engine: engine)
                 .presentationDetents([.medium, .large])
         }
     }
@@ -383,6 +392,55 @@ private struct ResultRow: View {
         let words = station.name.split(separator: " ")
         if words.count >= 2 { return String(words[0].prefix(1) + words[1].prefix(1)).uppercased() }
         return String(station.name.prefix(2)).uppercased()
+    }
+}
+
+// MARK: - History sheet
+
+private struct HistorySheet: View {
+    @ObservedObject var engine: RadioEngine
+
+    var body: some View {
+        ZStack {
+            Color(white: 0.039).ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                RoundedRectangle(cornerRadius: 3)
+                    .fill(Color.white.opacity(0.18))
+                    .frame(width: 36, height: 5)
+                    .padding(.top, 14)
+
+                Spacer().frame(height: 24)
+
+                if engine.history.entries.isEmpty {
+                    Spacer()
+                    Text("Nothing yet.")
+                        .font(.system(size: 14))
+                        .foregroundColor(.white.opacity(0.3))
+                    Spacer()
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(engine.history.entries.reversed()) { entry in
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(entry.title)
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(.white)
+                                        .lineLimit(1)
+                                    Text("\(entry.station) · \(entry.date.formatted(.relative(presentation: .named)))")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.white.opacity(0.38))
+                                        .lineLimit(1)
+                                }
+                                .padding(.vertical, 10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .padding(.horizontal, 24)
+                    }
+                }
+            }
+        }
     }
 }
 
