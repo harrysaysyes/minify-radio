@@ -26,7 +26,6 @@
 		BFIL0000000000000000013 /* WaveFieldTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FREF0000000000000000015 /* WaveFieldTests.swift */; };
 		BFIL0000000000000000014 /* SimplexNoise.swift in Sources */ = {isa = PBXBuildFile; fileRef = FREF0000000000000000006 /* SimplexNoise.swift */; };
 		BFIL0000000000000000015 /* TempoTrackerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FREF0000000000000000016 /* TempoTrackerTests.swift */; };
-		BFIL0000000000000000016 /* WaveTuning.swift in Sources */ = {isa = PBXBuildFile; fileRef = FREF0000000000000000017 /* WaveTuning.swift */; };
 		BFIL0000000000000000007 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FREF0000000000000000007 /* Assets.xcassets */; };
 		BFIL0000000000000000008 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = FREF000000000000000000A /* PrivacyInfo.xcprivacy */; };
 /* End PBXBuildFile section */
@@ -54,7 +53,6 @@
 		FREF0000000000000000014 /* WaveField.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveField.swift; sourceTree = "<group>"; };
 		FREF0000000000000000015 /* WaveFieldTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveFieldTests.swift; sourceTree = "<group>"; };
 		FREF0000000000000000016 /* TempoTrackerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TempoTrackerTests.swift; sourceTree = "<group>"; };
-		FREF0000000000000000017 /* WaveTuning.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WaveTuning.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -109,7 +107,6 @@
 				FREF000000000000000000F /* IcyParser.swift */,
 				FREF0000000000000000012 /* AudioReactivity.swift */,
 				FREF0000000000000000014 /* WaveField.swift */,
-				FREF0000000000000000017 /* WaveTuning.swift */,
 				FREF000000000000000000D /* MinifyRadio.entitlements */,
 				FREF0000000000000000007 /* Assets.xcassets */,
 				FREF0000000000000000009 /* Info.plist */,
@@ -221,7 +218,6 @@
 				BFIL000000000000000000B /* IcyParser.swift in Sources */,
 				BFIL000000000000000000E /* AudioReactivity.swift in Sources */,
 				BFIL0000000000000000011 /* WaveField.swift in Sources */,
-				BFIL0000000000000000016 /* WaveTuning.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

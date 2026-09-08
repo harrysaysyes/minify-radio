@@ -128,9 +128,6 @@ struct ContentView: View {
             .frame(width: geo.size.width, height: geo.size.height)
         }
         .ignoresSafeArea()
-        #if DEBUG
-        .overlay(alignment: .bottom) { TuningPanel() }
-        #endif
         .onAppear {
             engine.onEnergyUpdate = { [weak physics] bass, mid, treble in
                 physics?.bassEnergy   = bass

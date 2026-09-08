@@ -25,7 +25,7 @@ struct WaveField {
     /// Horizontal bunching.
     var gerstnerAmp        = 5.6
     var gerstnerWavelength = 240.0
-    var gerstnerSpeed      = 1.37
+    var gerstnerSpeed      = 1.39
 
     /// Fine treble octave, as a fraction of amplitude — a sparkle, not jitter.
     var shimmerAmp = 0.24

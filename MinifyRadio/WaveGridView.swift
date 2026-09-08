@@ -9,8 +9,10 @@ import SwiftUI
 
 enum WaveCfg {
     static let xGap: Double            = 12
-    static let yGap: Double            = 18
-    static let waveAmpY: Double        = 12
+    static let yGap: Double            = 14
+    static let waveAmpY: Double        = 5
+    static let lineWidth: Double       = 1.3
+    static let lineAlpha: Double       = 0.78
     // Touch interaction
     static let influenceRadius: Double = 350
     static let cursorStrength: Double  = 2.0
@@ -25,7 +27,7 @@ enum WaveCfg {
     static let audioAmpMultiplier: Double = 0.69
     static let flowBase: Double           = 1.5
     static let flowMid: Double            = 1.81
-    static let beatStrengthBase: Double   = 19.4
+    static let beatStrengthBase: Double   = 20.6
     static let beatStrengthScale: Double  = 20.1
     static let restGap: Double            = 1.0
 }
@@ -46,7 +48,7 @@ final class WavePhysics: ObservableObject {
     private(set) var rows = 0
     private(set) var cols = 0
 
-    private var field = WaveField()
+    private let field = WaveField()
 
     /// Field time — advances faster when the mids are busy, so flow follows the music.
     private var flowTime:        Double = 0
@@ -66,16 +68,13 @@ final class WavePhysics: ObservableObject {
     private var allSmoothed: [CGPoint] = []
     private var yBuf:        [Double]  = []
 
-    // Beat ripples — one expanding ring per beat, superposed. Ring geometry from
-    // each possible origin (centre, bottom, top) is static per grid, so all three
-    // distance/normal sets are precomputed in prepare().
-    private struct BeatRipple { let birth: Double; let strength: Double; let origin: Int }
+    // Beat ripples — one expanding ring per beat, superposed. Geometry from the
+    // screen centre is static per grid, so it is precomputed in prepare().
+    private struct BeatRipple { let birth: Double; let strength: Double }
     private var ripples:    [BeatRipple] = []
-    private var originDist: [[Double]] = []
-    private var originNX:   [[Double]] = []
-    private var originNY:   [[Double]] = []
-
-    private var gridYGap: Double = WaveCfg.yGap
+    private var rippleDist: [Double] = []
+    private var rippleNX:   [Double] = []
+    private var rippleNY:   [Double] = []
 
     /// Set externally by RadioEngine. Not @Published — avoids SwiftUI redraws.
     var bassEnergy:   Double = 0
@@ -90,12 +89,11 @@ final class WavePhysics: ObservableObject {
     func prepare(size: CGSize) {
         guard size.width > 0, size.height > 0, size != initializedSize else { return }
         initializedSize = size
-        gridYGap = WaveTuning.shared.yGap
 
         let padX = 4  // extra columns each side
         let padY = 3  // extra rows each side
         let c = Int(ceil(size.width  / WaveCfg.xGap)) + 1 + padX * 2
-        let r = Int(ceil(size.height / gridYGap)) + 1 + padY * 2
+        let r = Int(ceil(size.height / WaveCfg.yGap)) + 1 + padY * 2
         cols = c
         rows = r
 
@@ -105,7 +103,7 @@ final class WavePhysics: ObservableObject {
             for col in 0..<c {
                 pts.append(GridPoint(
                     baseX: Double(col - padX) * WaveCfg.xGap,
-                    baseY: Double(row - padY) * gridYGap
+                    baseY: Double(row - padY) * WaveCfg.yGap
                 ))
             }
         }
@@ -116,51 +114,31 @@ final class WavePhysics: ObservableObject {
         allSmoothed = [CGPoint](repeating: .zero, count: r * c)
         yBuf        = [Double](repeating: 0, count: r * c)
 
-        // Ring geometry from the three possible origins
-        let origins = [
-            CGPoint(x: size.width / 2, y: size.height / 2),   // 0: centre
-            CGPoint(x: size.width / 2, y: size.height),       // 1: bottom
-            CGPoint(x: size.width / 2, y: 0),                 // 2: top
-        ]
-        originDist = []
-        originNX   = []
-        originNY   = []
-        for origin in origins {
-            var dist = [Double](repeating: 0, count: r * c)
-            var nx   = [Double](repeating: 0, count: r * c)
-            var ny   = [Double](repeating: 0, count: r * c)
-            for i in 0..<pts.count {
-                let dx = pts[i].baseX - origin.x
-                let dy = pts[i].baseY - origin.y
-                let d  = max(1, (dx * dx + dy * dy).squareRoot())
-                dist[i] = d
-                nx[i]   = dx / d
-                ny[i]   = dy / d
-            }
-            originDist.append(dist)
-            originNX.append(nx)
-            originNY.append(ny)
+        let cx = size.width / 2, cy = size.height / 2
+        rippleDist = [Double](repeating: 0, count: r * c)
+        rippleNX   = [Double](repeating: 0, count: r * c)
+        rippleNY   = [Double](repeating: 0, count: r * c)
+        for i in 0..<pts.count {
+            let dx = pts[i].baseX - cx
+            let dy = pts[i].baseY - cy
+            let d  = max(1, (dx * dx + dy * dy).squareRoot())
+            rippleDist[i] = d
+            rippleNX[i]   = dx / d
+            rippleNY[i]   = dy / d
         }
     }
 
     // MARK: Physics update
 
     func update(currentTime: Double, size: CGSize) {
-        let tuning = WaveTuning.shared
-        if gridYGap != tuning.yGap { initializedSize = .zero }   // rebuild on density change
         prepare(size: size)
         guard !points.isEmpty else { return }
-
-        field.warp          = tuning.warp
-        field.gerstnerAmp   = tuning.gerstnerAmp
-        field.gerstnerSpeed = tuning.gerstnerSpeed
-        field.shimmerAmp    = tuning.shimmer
 
         if lastTime == 0 { lastTime = currentTime }
         let rawDelta   = currentTime - lastTime
         let dtSeconds  = min(max(rawDelta, 1.0 / 120.0), 1.0 / 30.0)
         lastTime       = currentTime
-        flowTime      += dtSeconds * (tuning.flowBase + midEnergy * tuning.flowMid)
+        flowTime      += dtSeconds * (WaveCfg.flowBase + midEnergy * WaveCfg.flowMid)
         ripples.removeAll { currentTime - $0.birth > 3 }
 
         let dtScale = dtSeconds * 60.0
@@ -206,17 +184,10 @@ final class WavePhysics: ObservableObject {
     func triggerBeatPulse(intensity: Double = 1.0) {
         guard !points.isEmpty, initializedSize != .zero else { return }
         // Soft beats ripple, drops slam — beats are the primary reaction
-        let tuning   = WaveTuning.shared
-        let strength = tuning.beatBase + tuning.beatScale * min(1.0, max(0.0, intensity))
-        switch tuning.beatOrigin {
-        case .center: ripples.append(BeatRipple(birth: lastTime, strength: strength, origin: 0))
-        case .bottom: ripples.append(BeatRipple(birth: lastTime, strength: strength, origin: 1))
-        case .top:    ripples.append(BeatRipple(birth: lastTime, strength: strength, origin: 2))
-        case .both:
-            ripples.append(BeatRipple(birth: lastTime, strength: strength, origin: 1))
-            ripples.append(BeatRipple(birth: lastTime, strength: strength, origin: 2))
-        }
-        if ripples.count > 10 { ripples.removeFirst(ripples.count - 10) }
+        let strength = WaveCfg.beatStrengthBase
+                     + WaveCfg.beatStrengthScale * min(1.0, max(0.0, intensity))
+        ripples.append(BeatRipple(birth: lastTime, strength: strength))
+        if ripples.count > 8 { ripples.removeFirst() }
     }
 
     // MARK: Draw
@@ -226,9 +197,8 @@ final class WavePhysics: ObservableObject {
         guard !points.isEmpty else { return }
 
         // Bass → wave height
-        let tuning       = WaveTuning.shared
         let bassResponse = pow(max(0, bassEnergy), 1.5)
-        let effAmpY      = tuning.baseAmp * (1.0 + bassResponse * tuning.ampMultiplier)
+        let effAmpY      = WaveCfg.waveAmpY * (1.0 + bassResponse * WaveCfg.audioAmpMultiplier)
         smoothedAmpY    += (effAmpY - smoothedAmpY) * 0.12
 
         // Treble → fine shimmer octave
@@ -266,14 +236,12 @@ final class WavePhysics: ObservableObject {
                 let p = points[i]
                 var rippleX = 0.0, rippleY = 0.0
                 for ripple in ripples {
-                    let amount = Ripple.displacement(dist: originDist[ripple.origin][i],
+                    let amount = Ripple.displacement(dist: rippleDist[i],
                                                      age: lastTime - ripple.birth,
-                                                     strength: ripple.strength,
-                                                     speed: tuning.rippleSpeed,
-                                                     width: tuning.rippleWidth)
+                                                     strength: ripple.strength)
                     if amount != 0 {
-                        rippleX += originNX[ripple.origin][i] * amount
-                        rippleY += originNY[ripple.origin][i] * amount
+                        rippleX += rippleNX[i] * amount
+                        rippleY += rippleNY[i] * amount
                     }
                 }
                 rowBuf[col] = CGPoint(
@@ -297,7 +265,7 @@ final class WavePhysics: ObservableObject {
         // instead of gluing to them; the push cascades up the stack.
         for i in 0..<(rows * nc) { yBuf[i] = allSmoothed[i].y }
         WaveCollision.resolve(&yBuf, rows: rows, cols: nc,
-                              restGap: tuning.restGap, hardGap: 1.5)
+                              restGap: WaveCfg.restGap, hardGap: 1.5)
         for i in 0..<(rows * nc) { allSmoothed[i].y = yBuf[i] }
 
         // Phase 3: draw — transparency layer prevents alpha accumulation where lines converge
@@ -306,15 +274,9 @@ final class WavePhysics: ObservableObject {
             var r: CGFloat = 1, g: CGFloat = 1, b: CGFloat = 1, a: CGFloat = 1
             uiColor.getRed(&r, green: &g, blue: &b, alpha: &a)
             cg.setAlpha(a)
-            if tuning.glow > 0 {
-                // Shadow set before the transparency layer blooms the whole
-                // composite once — one blur pass, not one per line.
-                cg.setShadow(offset: .zero, blur: tuning.glow,
-                             color: CGColor(red: r, green: g, blue: b, alpha: 0.9))
-            }
             cg.beginTransparencyLayer(auxiliaryInfo: nil)
             cg.setStrokeColor(CGColor(red: r, green: g, blue: b, alpha: 1))
-            cg.setLineWidth(tuning.lineWidth)
+            cg.setLineWidth(WaveCfg.lineWidth)
             cg.setLineJoin(.round)
             cg.setLineCap(.round)
 
@@ -392,7 +354,7 @@ struct WaveGridView: View {
                 physics.draw(
                     ctx: ctx,
                     size: size,
-                    lineColor: accent.opacity(WaveTuning.shared.lineAlpha),
+                    lineColor: accent.opacity(WaveCfg.lineAlpha),
                     bgColor: background
                 )
             }
