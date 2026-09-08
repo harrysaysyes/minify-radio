@@ -275,9 +275,13 @@ final class WavePhysics: ObservableObject {
 
         // Phase 3: draw — transparency layer prevents alpha accumulation where lines converge
         ctx.withCGContext { cg in
-            let uiColor = UIColor(lineColor)
             var r: CGFloat = 1, g: CGFloat = 1, b: CGFloat = 1, a: CGFloat = 1
-            uiColor.getRed(&r, green: &g, blue: &b, alpha: &a)
+            #if canImport(UIKit)
+            UIColor(lineColor).getRed(&r, green: &g, blue: &b, alpha: &a)
+            #else
+            NSColor(lineColor).usingColorSpace(.deviceRGB)?
+                .getRed(&r, green: &g, blue: &b, alpha: &a)
+            #endif
             cg.setAlpha(a)
             cg.beginTransparencyLayer(auxiliaryInfo: nil)
             cg.setStrokeColor(CGColor(red: r, green: g, blue: b, alpha: 1))
