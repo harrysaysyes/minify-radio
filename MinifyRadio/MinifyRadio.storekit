@@ -1,0 +1,117 @@
+{
+  "identifier" : "C3D4E5F6-A7B8-9012-CDEF-AB3456789012",
+  "nonConsumableProducts" : [
+    {
+      "displayPrice" : "0.99",
+      "familyShareable" : false,
+      "internalID" : "IAP0000000000001",
+      "localizations" : [
+        {
+          "description" : "Support the development of Minify apps.",
+          "displayName" : "Thank You",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.minify.support.1",
+      "referenceName" : "Support $1",
+      "type" : "NonConsumable"
+    },
+    {
+      "displayPrice" : "2.99",
+      "familyShareable" : false,
+      "internalID" : "IAP0000000000002",
+      "localizations" : [
+        {
+          "description" : "Support the development of Minify apps.",
+          "displayName" : "Supporter",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.minify.support.3",
+      "referenceName" : "Support $3",
+      "type" : "NonConsumable"
+    },
+    {
+      "displayPrice" : "4.99",
+      "familyShareable" : false,
+      "internalID" : "IAP0000000000003",
+      "localizations" : [
+        {
+          "description" : "Support the development of Minify apps.",
+          "displayName" : "Fan",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.minify.support.5",
+      "referenceName" : "Support $5",
+      "type" : "NonConsumable"
+    },
+    {
+      "displayPrice" : "9.99",
+      "familyShareable" : false,
+      "internalID" : "IAP0000000000004",
+      "localizations" : [
+        {
+          "description" : "Support the development of Minify apps.",
+          "displayName" : "Super Fan",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.minify.support.10",
+      "referenceName" : "Support $10",
+      "type" : "NonConsumable"
+    },
+    {
+      "displayPrice" : "24.99",
+      "familyShareable" : false,
+      "internalID" : "IAP0000000000005",
+      "localizations" : [
+        {
+          "description" : "Support the development of Minify apps.",
+          "displayName" : "Champion",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.minify.support.25",
+      "referenceName" : "Support $25",
+      "type" : "NonConsumable"
+    },
+    {
+      "displayPrice" : "49.99",
+      "familyShareable" : false,
+      "internalID" : "IAP0000000000006",
+      "localizations" : [
+        {
+          "description" : "Support the development of Minify apps.",
+          "displayName" : "Hero",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.minify.support.50",
+      "referenceName" : "Support $50",
+      "type" : "NonConsumable"
+    },
+    {
+      "displayPrice" : "99.99",
+      "familyShareable" : false,
+      "internalID" : "IAP0000000000007",
+      "localizations" : [
+        {
+          "description" : "Support the development of Minify apps.",
+          "displayName" : "Legend",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "app.minify.support.100",
+      "referenceName" : "Support $100",
+      "type" : "NonConsumable"
+    }
+  ],
+  "settings" : {
+    "_failTransactionsEnabled" : false
+  },
+  "version" : {
+    "major" : 2,
+    "minor" : 0
+  }
+}
