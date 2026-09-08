@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 // MARK: - Colour helpers
 
@@ -74,6 +75,7 @@ struct ContentView: View {
                             .lineLimit(2)
                             .animation(.easeInOut(duration: 0.3), value: engine.isPlaying)
                             .animation(.easeInOut(duration: 0.3), value: engine.nowPlayingTitle)
+                            .onTapGesture { openTrack() }
 
                         if !engine.nowPlayingArtist.isEmpty {
                             Text(engine.nowPlayingArtist)
@@ -149,6 +151,20 @@ struct ContentView: View {
         .sheet(item: $slotToEdit) { edit in
             StationSearchSheet(slot: edit.id, engine: engine)
                 .presentationDetents([.medium, .large])
+        }
+    }
+
+    /// Opens the identified track — Spotify if installed, else its Apple Music page.
+    private func openTrack() {
+        guard let link = engine.trackLink else { return }
+        let query   = "\(engine.nowPlayingArtist) \(engine.nowPlayingTitle)"
+            .trimmingCharacters(in: .whitespaces)
+        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+        if let spotify = URL(string: "spotify:search:\(encoded)"),
+           UIApplication.shared.canOpenURL(spotify) {
+            UIApplication.shared.open(spotify)
+        } else {
+            UIApplication.shared.open(link)
         }
     }
 

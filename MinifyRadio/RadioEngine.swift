@@ -176,10 +176,11 @@ class RadioEngine: NSObject, ObservableObject {
     /// Audio queued before playback starts — enough to ride out network jitter.
     private let prebufferSeconds = 0.75
 
-    // Track artwork: looked up per ICY title, wave art until it arrives
+    // Track identity: artwork + store page looked up per ICY title, wave art until it arrives
+    @Published private(set) var trackLink: URL? = nil
     private var trackArtwork:  MPMediaItemArtwork?
     private var artworkTask:   Task<Void, Never>?
-    private var artworkCache = [String: MPMediaItemArtwork]()
+    private var artworkCache = [String: (art: MPMediaItemArtwork, link: URL?)]()
 
     /// Serial queue that owns all decode state. stop() uses sync to drain it before teardown,
     /// guaranteeing no in-flight decode work can race with audioFileStream/audioConverter teardown.
@@ -263,6 +264,7 @@ class RadioEngine: NSObject, ObservableObject {
         artworkTask?.cancel()
         artworkTask  = nil
         trackArtwork = nil
+        trackLink    = nil
 
         stopEnergyTimer()
         isPlaying        = false
@@ -595,35 +597,47 @@ class RadioEngine: NSObject, ObservableObject {
     private func fetchTrackArtwork(query rawQuery: String) {
         artworkTask?.cancel()
         trackArtwork = nil
+        trackLink    = nil
         let query = rawQuery.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else { return }
-        if let hit = artworkCache[query] { trackArtwork = hit; return }
+        if let hit = artworkCache[query] {
+            trackArtwork = hit.art
+            trackLink    = hit.link
+            return
+        }
 
         artworkTask = Task { [weak self] in
-            guard let art = await RadioEngine.lookupArtwork(query: query) else { return }
+            guard let found = await RadioEngine.lookupTrack(query: query) else { return }
             await MainActor.run {
                 guard let self, !Task.isCancelled else { return }
-                self.artworkCache[query] = art
-                self.trackArtwork = art
+                self.artworkCache[query] = found
+                self.trackArtwork = found.art
+                self.trackLink    = found.link
                 self.updateNowPlaying()
             }
         }
     }
 
-    private static func lookupArtwork(query: String) async -> MPMediaItemArtwork? {
+    private static func lookupTrack(query: String) async -> (art: MPMediaItemArtwork, link: URL?)? {
         struct SearchResponse: Codable {
-            struct Result: Codable { let artworkUrl100: String? }
+            struct Result: Codable {
+                let artworkUrl100: String?
+                let trackViewUrl:  String?
+            }
             let results: [Result]
         }
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
         guard let url = URL(string: "https://itunes.apple.com/search?media=music&limit=1&term=\(encoded)"),
               let (data, _) = try? await URLSession.shared.data(from: url),
               let response  = try? JSONDecoder().decode(SearchResponse.self, from: data),
-              let thumbUrl  = response.results.first?.artworkUrl100,
+              let result    = response.results.first,
+              let thumbUrl  = result.artworkUrl100,
               let artUrl    = URL(string: thumbUrl.replacingOccurrences(of: "100x100", with: "600x600")),
               let (imgData, _) = try? await URLSession.shared.data(from: artUrl),
               let image = UIImage(data: imgData) else { return nil }
-        return MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        let art  = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        let link = result.trackViewUrl.flatMap(URL.init(string:))
+        return (art, link)
     }
 
     // MARK: - Audio session
