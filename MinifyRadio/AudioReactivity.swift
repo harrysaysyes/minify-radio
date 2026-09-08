@@ -39,6 +39,57 @@ struct AdaptiveNormalizer {
     }
 }
 
+/// Detects the quiet gap between tracks: a sustained dip well below the recent
+/// loudness baseline, followed by recovery — the moment the next track starts.
+/// Used to trigger an early identification check instead of waiting for a timer.
+struct TransitionDetector {
+
+    let dipFraction:   Double   // dip = energy below this fraction of the baseline
+    let minDipSeconds: Double   // dip must persist this long to count
+    let refractory:    Double   // minimum seconds between fires
+
+    private(set) var reference: Double = 0
+    private var dipTime:   Double = 0
+    private var inDip      = false
+    private var sinceFire: Double = .greatestFiniteMagnitude
+    private let gate       = 1e-4
+
+    init(dipFraction: Double = 0.25, minDipSeconds: Double = 0.8, refractory: Double = 20) {
+        self.dipFraction   = dipFraction
+        self.minDipSeconds = minDipSeconds
+        self.refractory    = refractory
+    }
+
+    mutating func process(energy: Double, dt: Double) -> Bool {
+        sinceFire += dt
+
+        // Asymmetric baseline: follows loud passages quickly, barely sags in dips —
+        // otherwise a long gap would drag the reference down and hide the recovery.
+        let halflife = energy > reference ? 4.0 : 30.0
+        reference += (energy - reference) * (1 - exp(-dt * M_LN2 / halflife))
+        guard reference > gate else {
+            inDip   = false
+            dipTime = 0
+            return false
+        }
+
+        if energy < reference * dipFraction {
+            dipTime += dt
+            if dipTime >= minDipSeconds { inDip = true }
+            return false
+        }
+
+        defer { dipTime = 0 }
+        if inDip, sinceFire >= refractory {
+            inDip     = false
+            sinceFire = 0
+            return true
+        }
+        inDip = false
+        return false
+    }
+}
+
 /// Predictive beat tracker. Onset detection is always reactive — the pulse fires
 /// after the beat was heard, so it lands late by detection + output latency.
 /// This tracker listens to onset times, estimates tempo (folding double-time

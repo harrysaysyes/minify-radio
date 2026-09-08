@@ -184,10 +184,13 @@ class RadioEngine: NSObject, ObservableObject {
     private var artworkTask:   Task<Void, Never>?
     private var artworkCache = [String: (art: MPMediaItemArtwork, link: URL?)]()
 
-    // Shazam fallback for stations that never send ICY titles
+    // Shazam fallback for stations that never send ICY titles.
+    // A quiet gap + recovery (track change) triggers an early check;
+    // the timer is the backstop cadence.
     private let shazam = ShazamMatcher()
     private var icyTitleSeen = false
     private var shazamTimer: Timer?
+    private var transition = TransitionDetector()
 
     /// Serial queue that owns all decode state. stop() uses sync to drain it before teardown,
     /// guaranteeing no in-flight decode work can race with audioFileStream/audioConverter teardown.
@@ -346,13 +349,14 @@ class RadioEngine: NSObject, ObservableObject {
 
     private func startShazamFallback() {
         icyTitleSeen = false
+        transition   = TransitionDetector()
         shazamTimer?.invalidate()
         // First check shortly after connect, then a steady cadence — dedup in the
         // history means repeat matches of the same track are free.
         DispatchQueue.main.asyncAfter(deadline: .now() + 12) { [weak self] in
             self?.attemptShazamIfNeeded()
         }
-        shazamTimer = Timer.scheduledTimer(withTimeInterval: 90, repeats: true) { [weak self] _ in
+        shazamTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             self?.attemptShazamIfNeeded()
         }
     }
@@ -607,6 +611,13 @@ class RadioEngine: NSObject, ObservableObject {
             tapBass   = bassNorm.normalize(bassRaw, dt: dt)
             tapMid    = midNorm.normalize(midRaw, dt: dt)
             tapTreble = trebleNorm.normalize(trebleRaw, dt: dt)
+
+            if transition.process(energy: bassRaw + midRaw + trebleRaw, dt: dt) {
+                // A new track just started — identify it after the intro settles
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+                    self?.attemptShazamIfNeeded()
+                }
+            }
 
             meterClock += dt
             if bassOnset.process(energy: bassRaw, dt: dt) {

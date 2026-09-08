@@ -68,6 +68,55 @@ final class AdaptiveNormalizerTests: XCTestCase {
     }
 }
 
+final class TransitionDetectorTests: XCTestCase {
+
+    private let dt = 1.0 / 20.0
+
+    private func run(_ det: inout TransitionDetector, energy: Double, seconds: Double) -> Int {
+        var fires = 0
+        for _ in 0 ..< Int(seconds / dt) {
+            if det.process(energy: energy, dt: dt) { fires += 1 }
+        }
+        return fires
+    }
+
+    func testSteadyMusicNeverFires() {
+        var det = TransitionDetector()
+        XCTAssertEqual(run(&det, energy: 0.5, seconds: 60), 0)
+    }
+
+    func testDipThenRecoveryFiresOnce() {
+        var det = TransitionDetector()
+        _ = run(&det, energy: 0.5, seconds: 30)     // establish baseline
+        _ = run(&det, energy: 0.02, seconds: 1.5)   // gap between tracks
+        XCTAssertEqual(run(&det, energy: 0.5, seconds: 5), 1)   // fires at recovery
+    }
+
+    func testBriefDipDoesNotFire() {
+        var det = TransitionDetector()
+        _ = run(&det, energy: 0.5, seconds: 30)
+        _ = run(&det, energy: 0.02, seconds: 0.3)   // just a beat of silence
+        XCTAssertEqual(run(&det, energy: 0.5, seconds: 5), 0)
+    }
+
+    func testRefractoryLimitsFireRate() {
+        var det = TransitionDetector()
+        _ = run(&det, energy: 0.5, seconds: 30)
+        var fires = 0
+        for _ in 0 ..< 3 {                          // three dips ~7s apart
+            _ = run(&det, energy: 0.02, seconds: 1.5)
+            fires += run(&det, energy: 0.5, seconds: 5)
+        }
+        XCTAssertEqual(fires, 1)                    // refractory swallows the rest
+    }
+
+    func testSilenceFromStartNeverFires() {
+        var det = TransitionDetector()
+        XCTAssertEqual(run(&det, energy: 0.0001, seconds: 60), 0)
+        XCTAssertEqual(run(&det, energy: 0.5, seconds: 5), 0)   // music starting isn't a transition
+    }
+}
+
 final class OnsetDetectorTests: XCTestCase {
 
     private let dt = 1.0 / 20.0
