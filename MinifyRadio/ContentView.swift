@@ -87,8 +87,9 @@ struct ContentView: View {
 
                     Spacer().frame(height: 28)
 
-                    // Now playing — art on the right when a track is identified
-                    HStack(alignment: .center, spacing: 14) {
+                    // Now playing — art beside the text when a track is identified;
+                    // the pair hugs its content and centres as a unit.
+                    HStack(alignment: .center, spacing: 16) {
                         VStack(alignment: engine.trackArtworkImage == nil ? .center : .leading,
                                spacing: 5) {
                             Text(engine.nowPlayingTitle)
@@ -123,8 +124,6 @@ struct ContentView: View {
                                            value: engine.currentTrackFavorited)
                             }
                         }
-                        .frame(maxWidth: .infinity,
-                               alignment: engine.trackArtworkImage == nil ? .center : .leading)
 
                         if let art = engine.trackArtworkImage {
                             Image(uiImage: art)
