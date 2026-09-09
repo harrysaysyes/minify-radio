@@ -38,7 +38,7 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
             return
         }
         let star = CPNowPlayingImageButton(image: image) { _ in
-            RadioEngine.shared.favoriteCurrentTrack()
+            RadioEngine.shared.toggleFavoriteCurrentTrack()
         }
         CPNowPlayingTemplate.shared.updateNowPlayingButtons([star])
     }

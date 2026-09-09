@@ -87,41 +87,60 @@ struct ContentView: View {
 
                     Spacer().frame(height: 28)
 
-                    // Now playing
-                    VStack(spacing: 5) {
-                        Text(engine.nowPlayingTitle)
-                            .font(.system(
-                                size:   engine.isPlaying ? 17 : 13,
-                                weight: engine.isPlaying ? .semibold : .regular
-                            ))
-                            .foregroundColor(.white.opacity(engine.isPlaying ? 1.0 : 0.32))
-                            .multilineTextAlignment(.center)
-                            .lineLimit(2)
-                            .animation(.easeInOut(duration: 0.3), value: engine.isPlaying)
-                            .animation(.easeInOut(duration: 0.3), value: engine.nowPlayingTitle)
-                            .onTapGesture { openTrack() }
+                    // Now playing — art on the right when a track is identified
+                    HStack(alignment: .center, spacing: 14) {
+                        VStack(alignment: engine.trackArtworkImage == nil ? .center : .leading,
+                               spacing: 5) {
+                            Text(engine.nowPlayingTitle)
+                                .font(.system(
+                                    size:   engine.isPlaying ? 17 : 13,
+                                    weight: engine.isPlaying ? .semibold : .regular
+                                ))
+                                .foregroundColor(.white.opacity(engine.isPlaying ? 1.0 : 0.32))
+                                .multilineTextAlignment(engine.trackArtworkImage == nil ? .center : .leading)
+                                .lineLimit(2)
+                                .animation(.easeInOut(duration: 0.3), value: engine.isPlaying)
+                                .animation(.easeInOut(duration: 0.3), value: engine.nowPlayingTitle)
+                                .onTapGesture { openTrack() }
 
-                        if !engine.nowPlayingArtist.isEmpty {
-                            Text(engine.nowPlayingArtist)
-                                .font(.system(size: 13))
-                                .foregroundColor(.white.opacity(0.45))
-                                .multilineTextAlignment(.center)
-                                .lineLimit(1)
-                                .animation(.easeInOut(duration: 0.3), value: engine.nowPlayingArtist)
+                            if !engine.nowPlayingArtist.isEmpty {
+                                Text(engine.nowPlayingArtist)
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.white.opacity(0.45))
+                                    .lineLimit(1)
+                                    .animation(.easeInOut(duration: 0.3), value: engine.nowPlayingArtist)
+                            }
+
+                            if engine.trackID != nil {
+                                Button { engine.toggleFavoriteCurrentTrack() } label: {
+                                    Image(systemName: engine.currentTrackFavorited ? "star.fill" : "star")
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundColor(engine.currentTrackFavorited
+                                                         ? accent : .white.opacity(0.3))
+                                }
+                                .padding(.top, 6)
+                                .animation(.easeInOut(duration: 0.2),
+                                           value: engine.currentTrackFavorited)
+                            }
+                        }
+                        .frame(maxWidth: .infinity,
+                               alignment: engine.trackArtworkImage == nil ? .center : .leading)
+
+                        if let art = engine.trackArtworkImage {
+                            Image(uiImage: art)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 84, height: 84)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                                )
+                                .transition(.opacity)
                         }
                     }
-                    .frame(minHeight: 54)
-
-                    if engine.trackID != nil {
-                        Button { engine.favoriteCurrentTrack() } label: {
-                            Image(systemName: engine.currentTrackFavorited ? "star.fill" : "star")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(engine.currentTrackFavorited
-                                                 ? accent : .white.opacity(0.3))
-                        }
-                        .padding(.top, 12)
-                        .animation(.easeInOut(duration: 0.2), value: engine.currentTrackFavorited)
-                    }
+                    .frame(minHeight: 84)
+                    .animation(.easeInOut(duration: 0.3), value: engine.trackArtworkImage == nil)
 
                     Spacer().frame(height: 36)
 
