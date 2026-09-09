@@ -1,23 +1,11 @@
-# Node modules (if using Capacitor)
-node_modules/
-package-lock.json
-
-# iOS build files (if building native)
-ios/
-android/
-
-# Generated icons (users create these)
-app/assets/icons/*.png
-
-# macOS
+# Xcode
+xcuserdata/
 .DS_Store
 
 # Editor
 .vscode/
 .idea/
 *.swp
-*.swo
 
 # Logs
 *.log
-npm-debug.log*
