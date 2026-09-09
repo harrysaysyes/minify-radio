@@ -15,6 +15,8 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
         listTemplate = template
         interfaceController.setRootTemplate(template, animated: true, completion: nil)
 
+        updateNowPlayingButtons()
+
         // Refresh rows (playing indicator, station swaps) whenever the engine changes
         // (main-queue hop so @Published values are updated when we read them).
         cancellable = RadioEngine.shared.objectWillChange
@@ -22,7 +24,23 @@ class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
             .sink { [weak self] _ in
                 guard let self, let template = self.listTemplate else { return }
                 template.updateSections([self.makeSection()])
+                self.updateNowPlayingButtons()
             }
+    }
+
+    /// Star on the Now Playing screen — favorites the identified track in Apple Music.
+    private func updateNowPlayingButtons() {
+        let engine = RadioEngine.shared
+        guard engine.trackID != nil,
+              let image = UIImage(systemName: engine.currentTrackFavorited ? "star.fill" : "star")
+        else {
+            CPNowPlayingTemplate.shared.updateNowPlayingButtons([])
+            return
+        }
+        let star = CPNowPlayingImageButton(image: image) { _ in
+            RadioEngine.shared.favoriteCurrentTrack()
+        }
+        CPNowPlayingTemplate.shared.updateNowPlayingButtons([star])
     }
 
     func templateApplicationScene(_ templateApplicationScene: CPTemplateApplicationScene,

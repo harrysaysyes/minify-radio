@@ -2,6 +2,7 @@ import AVFoundation
 import MediaPlayer
 import AudioToolbox
 import Accelerate
+import MusicKit
 import ShazamKit
 import UIKit
 
@@ -180,9 +181,11 @@ class RadioEngine: NSObject, ObservableObject {
 
     // Track identity: artwork + store page looked up per ICY title, wave art until it arrives
     @Published private(set) var trackLink: URL? = nil
+    @Published private(set) var trackID: String? = nil
+    @Published private(set) var currentTrackFavorited = false
     private var trackArtwork:  MPMediaItemArtwork?
     private var artworkTask:   Task<Void, Never>?
-    private var artworkCache = [String: (art: MPMediaItemArtwork, link: URL?)]()
+    private var artworkCache = [String: (art: MPMediaItemArtwork, link: URL?, id: String?)]()
 
     // Shazam fallback for stations that never send ICY titles.
     // A quiet gap + recovery (track change) triggers an early check;
@@ -279,6 +282,8 @@ class RadioEngine: NSObject, ObservableObject {
         artworkTask  = nil
         trackArtwork = nil
         trackLink    = nil
+        trackID      = nil
+        currentTrackFavorited = false
 
         shazamTimer?.invalidate()
         shazamTimer  = nil
@@ -371,6 +376,8 @@ class RadioEngine: NSObject, ObservableObject {
         nowPlayingTitle  = title
         nowPlayingArtist = item.artist ?? ""
         trackLink        = item.appleMusicURL
+        trackID          = item.appleMusicID
+        currentTrackFavorited = false
         logToHistory([item.artist, item.title].compactMap { $0 }.joined(separator: " - "),
                      link: item.appleMusicURL)
         updateNowPlaying()
@@ -690,11 +697,14 @@ class RadioEngine: NSObject, ObservableObject {
         artworkTask?.cancel()
         trackArtwork = nil
         trackLink    = nil
+        trackID      = nil
+        currentTrackFavorited = false
         let query = rawQuery.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else { return }
         if let hit = artworkCache[query] {
             trackArtwork = hit.art
             trackLink    = hit.link
+            trackID      = hit.id
             if let link = hit.link { attachLinkToHistory(link, title: query) }
             return
         }
@@ -706,17 +716,55 @@ class RadioEngine: NSObject, ObservableObject {
                 self.artworkCache[query] = found
                 self.trackArtwork = found.art
                 self.trackLink    = found.link
+                self.trackID      = found.id
                 if let link = found.link { self.attachLinkToHistory(link, title: query) }
                 self.updateNowPlaying()
             }
         }
     }
 
-    private static func lookupTrack(query: String) async -> (art: MPMediaItemArtwork, link: URL?)? {
+    // MARK: - Favorite (adds to the Apple Music library and marks it a favorite)
+
+    func favoriteCurrentTrack() {
+        guard let id = trackID, !currentTrackFavorited else { return }
+        currentTrackFavorited = true   // optimistic; reverted on total failure
+        Task { [weak self] in
+            let ok = await RadioEngine.favorite(id: id)
+            if !ok { await MainActor.run { self?.currentTrackFavorited = false } }
+        }
+    }
+
+    private static func favorite(id: String) async -> Bool {
+        guard await MusicAuthorization.request() == .authorized else { return false }
+        var addedToLibrary = false
+        var rated = false
+        do {
+            let request = MusicCatalogResourceRequest<Song>(matching: \.id, equalTo: MusicItemID(id))
+            if let song = try await request.response().items.first {
+                try await MusicLibrary.shared.add(song)
+                addedToLibrary = true
+            }
+        } catch {}
+        do {
+            guard let url = URL(string: "https://api.music.apple.com/v1/me/ratings/songs/\(id)") else {
+                return addedToLibrary
+            }
+            var urlRequest = URLRequest(url: url)
+            urlRequest.httpMethod = "PUT"
+            urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            urlRequest.httpBody = Data(#"{"type":"ratings","attributes":{"value":1}}"#.utf8)
+            _ = try await MusicDataRequest(urlRequest: urlRequest).response()
+            rated = true
+        } catch {}
+        return addedToLibrary || rated
+    }
+
+    private static func lookupTrack(query: String) async -> (art: MPMediaItemArtwork, link: URL?, id: String?)? {
         struct SearchResponse: Codable {
             struct Result: Codable {
                 let artworkUrl100: String?
                 let trackViewUrl:  String?
+                let trackId:       Int?
             }
             let results: [Result]
         }
@@ -731,7 +779,7 @@ class RadioEngine: NSObject, ObservableObject {
               let image = UIImage(data: imgData) else { return nil }
         let art  = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
         let link = result.trackViewUrl.flatMap(URL.init(string:))
-        return (art, link)
+        return (art, link, result.trackId.map(String.init))
     }
 
     // MARK: - Audio session

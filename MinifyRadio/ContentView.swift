@@ -112,6 +112,17 @@ struct ContentView: View {
                     }
                     .frame(minHeight: 54)
 
+                    if engine.trackID != nil {
+                        Button { engine.favoriteCurrentTrack() } label: {
+                            Image(systemName: engine.currentTrackFavorited ? "star.fill" : "star")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(engine.currentTrackFavorited
+                                                 ? accent : .white.opacity(0.3))
+                        }
+                        .padding(.top, 12)
+                        .animation(.easeInOut(duration: 0.2), value: engine.currentTrackFavorited)
+                    }
+
                     Spacer().frame(height: 36)
 
                     // Station buttons

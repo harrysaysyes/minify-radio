@@ -54,6 +54,8 @@
     <array>
         <string>audio</string>
     </array>
+    <key>NSAppleMusicUsageDescription</key>
+    <string>Starring a song adds it to your Apple Music library as a favorite.</string>
     <key>LSApplicationQueriesSchemes</key>
     <array>
         <string>spotify</string>
