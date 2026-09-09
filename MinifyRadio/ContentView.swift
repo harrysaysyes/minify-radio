@@ -90,15 +90,14 @@ struct ContentView: View {
                     // Now playing — art beside the text when a track is identified;
                     // the pair hugs its content and centres as a unit.
                     HStack(alignment: .center, spacing: 16) {
-                        VStack(alignment: engine.trackArtworkImage == nil ? .center : .leading,
-                               spacing: 5) {
+                        VStack(alignment: .center, spacing: 5) {
                             Text(engine.nowPlayingTitle)
                                 .font(.system(
                                     size:   engine.isPlaying ? 17 : 13,
                                     weight: engine.isPlaying ? .semibold : .regular
                                 ))
                                 .foregroundColor(.white.opacity(engine.isPlaying ? 1.0 : 0.32))
-                                .multilineTextAlignment(engine.trackArtworkImage == nil ? .center : .leading)
+                                .multilineTextAlignment(.center)
                                 .lineLimit(2)
                                 .animation(.easeInOut(duration: 0.3), value: engine.isPlaying)
                                 .animation(.easeInOut(duration: 0.3), value: engine.nowPlayingTitle)
