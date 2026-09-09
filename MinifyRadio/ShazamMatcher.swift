@@ -9,6 +9,9 @@ final class ShazamMatcher: NSObject, SHSessionDelegate {
     /// Called on the main queue with the matched item.
     var onMatch: ((SHMatchedMediaItem) -> Void)?
 
+    /// Called on the main queue when an attempt's listen window closes unmatched.
+    var onNoMatch: (() -> Void)?
+
     private let lock = NSLock()
     private var session: SHSession?
     private var listenedSeconds = 0.0
@@ -38,9 +41,17 @@ final class ShazamMatcher: NSObject, SHSessionDelegate {
         lock.lock()
         guard let s = session else { lock.unlock(); return }
         listenedSeconds += Double(buffer.frameLength) / buffer.format.sampleRate
-        if listenedSeconds > listenWindow { session = nil }   // this attempt is over
+        var expired = false
+        if listenedSeconds > listenWindow {   // this attempt is over
+            session = nil
+            expired = true
+        }
         let mono = downmixedToMono(buffer)
         lock.unlock()
+        if expired {
+            DispatchQueue.main.async { [weak self] in self?.onNoMatch?() }
+            return
+        }
         s.matchStreamingBuffer(mono, at: time)
     }
 

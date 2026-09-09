@@ -189,11 +189,12 @@ class RadioEngine: NSObject, ObservableObject {
     private var lastAppliedTitle: String?
     private var artworkCache = [String: (art: MPMediaItemArtwork, image: UIImage, link: URL?, id: String?)]()
 
-    // Shazam fallback for stations that never send ICY titles.
-    // A quiet gap + recovery (track change) triggers an early check;
-    // the timer is the backstop cadence.
+    // Shazam runs on every station — some title feeds are junk, so a match
+    // overwrites the station's title. A quiet gap + recovery (track change)
+    // triggers an early check; the timer is the backstop cadence.
+    private enum TitleSource { case none, icy, shazam }
     private let shazam = ShazamMatcher()
-    private var icyTitleSeen = false
+    private var titleSource: TitleSource = .none
     private var shazamTimer: Timer?
     private var transition = TransitionDetector()
 
@@ -253,7 +254,8 @@ class RadioEngine: NSObject, ObservableObject {
         setupAudioSession()
         setupRemoteCommands()
         setupInterruptionHandling()
-        shazam.onMatch = { [weak self] item in self?.applyShazamMatch(item) }
+        shazam.onMatch   = { [weak self] item in self?.applyShazamMatch(item) }
+        shazam.onNoMatch = { [weak self] in self?.handleShazamNoMatch() }
     }
 
     // MARK: - Play / Stop
@@ -290,9 +292,9 @@ class RadioEngine: NSObject, ObservableObject {
         lastAppliedTitle = nil
 
         shazamTimer?.invalidate()
-        shazamTimer  = nil
+        shazamTimer = nil
         shazam.cancel()
-        icyTitleSeen = false
+        titleSource = .none
 
         stopEnergyTimer()
         isPlaying        = false
@@ -357,8 +359,8 @@ class RadioEngine: NSObject, ObservableObject {
     // MARK: - Shazam fallback (stations that never send titles)
 
     private func startShazamFallback() {
-        icyTitleSeen = false
-        transition   = TransitionDetector()
+        titleSource = .none
+        transition  = TransitionDetector()
         shazamTimer?.invalidate()
         // First check shortly after connect, then a steady cadence — dedup in the
         // history means repeat matches of the same track are free.
@@ -370,13 +372,30 @@ class RadioEngine: NSObject, ObservableObject {
         }
     }
 
+    /// A shazam-sourced title that stops re-confirming is stale — likely a new,
+    /// unidentifiable track. Fall back to the station default rather than hold
+    /// the previous song. Station-sourced titles are never cleared by a miss.
+    private func handleShazamNoMatch() {
+        guard isPlaying, case .shazam = titleSource else { return }
+        titleSource = .none
+        nowPlayingTitle   = "Live"
+        nowPlayingArtist  = currentStation?.tagline ?? ""
+        trackLink         = nil
+        trackID           = nil
+        trackArtwork      = nil
+        trackArtworkImage = nil
+        currentTrackFavorited = false
+        updateNowPlaying()
+    }
+
     private func attemptShazamIfNeeded() {
-        guard isPlaying, !icyTitleSeen else { return }
+        guard isPlaying else { return }
         shazam.beginAttempt()
     }
 
     private func applyShazamMatch(_ item: SHMatchedMediaItem) {
-        guard isPlaying, !icyTitleSeen, let title = item.title else { return }
+        guard isPlaying, let title = item.title else { return }
+        titleSource = .shazam
         nowPlayingTitle  = title
         nowPlayingArtist = item.artist ?? ""
         trackLink        = item.appleMusicURL
@@ -393,7 +412,7 @@ class RadioEngine: NSObject, ObservableObject {
                 guard let (data, _) = try? await URLSession.shared.data(from: artURL),
                       let image = UIImage(data: data) else { return }
                 await MainActor.run {
-                    guard let self, self.isPlaying, !self.icyTitleSeen else { return }
+                    guard let self, self.isPlaying, case .shazam = self.titleSource else { return }
                     self.trackArtwork      = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
                     self.trackArtworkImage = image
                     self.updateNowPlaying()
@@ -665,12 +684,18 @@ class RadioEngine: NSObject, ObservableObject {
     }
 
     private func applyStreamTitle(_ title: String) {
-        icyTitleSeen = true   // real titles win — the shazam fallback stands down
-        shazam.cancel()
         // ICY streams resend the current title every metadata block — only a
         // changed title is a new track.
         guard title != lastAppliedTitle else { return }
         lastAppliedTitle = title
+        titleSource = .icy
+        // Show the station's title immediately, but give shazam a shot at
+        // overwriting it — some stations send junk feeds. Fresh attempt once
+        // the new track's audio is actually playing.
+        shazam.cancel()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            self?.attemptShazamIfNeeded()
+        }
         let parts = title.components(separatedBy: " - ")
         if parts.count >= 2 {
             nowPlayingTitle  = parts[1...].joined(separator: " - ").trimmingCharacters(in: .whitespaces)
